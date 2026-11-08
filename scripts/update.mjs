@@ -21,10 +21,12 @@ const CHUNK = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const mask = (s) => String(s).split(KEY).join('***');
 
+let lastMeta = '';
 async function getText(url, tries = 3) {
   for (let i = 1; ; i++) {
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (booklog-library-check)' } });
+      const r = await fetch(url);
+      lastMeta = `status=${r.status} type=${r.headers.get('content-type')} server=${r.headers.get('server')} len=${r.headers.get('content-length')} via=${r.headers.get('via')}`;
       if (!r.ok) throw new Error(`HTTP ${r.status} ${mask(url)}`);
       return await r.text();
     } catch (e) {
@@ -71,7 +73,7 @@ async function fetchShelf() {
     console.log(`booklog page ${p}: +${added} (total ${books.length})`);
     if (p === 1 && !added) {
       const title = (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
-      console.log(`[diag] length=${html.length} title=${JSON.stringify(title)} head=${JSON.stringify(html.slice(0, 300))}`);
+      console.log(`[diag] ${lastMeta} length=${html.length} title=${JSON.stringify(title)} head=${JSON.stringify(html.slice(0, 300))}`);
     }
     if (!added) break;
     await sleep(PAGE_WAIT_MS);
