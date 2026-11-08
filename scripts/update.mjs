@@ -99,6 +99,13 @@ for (const isbn of isbns) {
 console.log(`targets ${targets.length}, with ISBN ${isbns.length}, reuse(蔵書なし) ${reused}, check ${todo.length}`);
 
 let failed = 0;
+let shown = 0;
+function fallback(isbn) {
+  failed++;
+  const p = prev.get(isbn);
+  if (p && isOk(p.avail)) result.set(isbn, { avail: p.avail, checkedAt: p.checkedAt, stale: true });
+  else result.set(isbn, { avail: [{ system: '', status: 'Error', reserveurl: '', libs: [] }], checkedAt: '', stale: true });
+}
 for (let i = 0; i < todo.length; i += CHUNK) {
   const chunk = todo.slice(i, i + CHUNK);
   console.log(`calil ${i + 1}-${i + chunk.length} / ${todo.length}`);
@@ -107,18 +114,15 @@ for (let i = 0; i < todo.length; i += CHUNK) {
     const now = new Date().toISOString();
     for (const isbn of chunk) {
       const avail = toAvail(res[isbn]);
-      if (!isOk(avail)) throw new Error(`incomplete response for ${isbn}`);
-      result.set(isbn, { avail, checkedAt: now });
+      if (isOk(avail)) result.set(isbn, { avail, checkedAt: now });
+      else {
+        if (shown++ < 3) console.warn(`incomplete response for ${isbn}: ${JSON.stringify(res[isbn])}`);
+        fallback(isbn);
+      }
     }
   } catch (e) {
     console.warn('chunk failed: ' + mask(e.message));
-    for (const isbn of chunk) {
-      if (result.has(isbn)) continue;
-      failed++;
-      const p = prev.get(isbn);
-      if (p && isOk(p.avail)) result.set(isbn, { avail: p.avail, checkedAt: p.checkedAt, stale: true });
-      else result.set(isbn, { avail: [{ system: '', status: 'Error', reserveurl: '', libs: [] }], checkedAt: '', stale: true });
-    }
+    for (const isbn of chunk) if (!result.has(isbn)) fallback(isbn);
   }
   await sleep(500);
 }
