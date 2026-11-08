@@ -69,6 +69,10 @@ async function fetchShelf() {
       });
     }
     console.log(`booklog page ${p}: +${added} (total ${books.length})`);
+    if (p === 1 && !added) {
+      const title = (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
+      console.log(`[diag] length=${html.length} title=${JSON.stringify(title)} head=${JSON.stringify(html.slice(0, 300))}`);
+    }
     if (!added) break;
     await sleep(PAGE_WAIT_MS);
   }
