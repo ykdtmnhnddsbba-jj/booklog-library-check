@@ -193,7 +193,7 @@ function kindOf(b){
   const rel=relevant(b),libs=rel.flatMap(a=>a.libs);
   if(libs.some(l=>l.state==='貸出可'))return 'avail';
   if(libs.length)return 'held';
-  if(rel.some(a=>a.status!=='OK'))return 'error';
+  if(rel.some(a=>a.status!=='OK'&&a.status!=='Cache'))return 'error';
   return 'none';
 }
 const ORDER={avail:0,held:1,error:2,none:3,noisbn:4};
@@ -229,7 +229,7 @@ function card(b,kind){
       if(x.libs.length){
         x.libs.forEach(l=>{const p=el('span','pill '+pillCls(l.state),l.state);if(l.name!==sysName(x.system))p.title=l.name;row.append(p)});
         const u=safeUrl(x.reserveurl);if(u)row.append(link('図書館のページ ↗',u));
-      }else if(x.status==='OK')row.append(el('span','pill none','蔵書なし'));
+      }else if(x.status==='OK'||x.status==='Cache')row.append(el('span','pill none','蔵書なし'));
       else row.append(el('span','pill err',x.status==='Error'?'取得エラー':'未取得'));
       libs.append(row);
     });

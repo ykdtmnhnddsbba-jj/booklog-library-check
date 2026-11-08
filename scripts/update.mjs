@@ -60,7 +60,9 @@ function toAvail(entry) {
     libs: Object.entries(d.libkey || {}).map(([name, state]) => ({ name, state })),
   }));
 }
-const isOk = (avail) => Array.isArray(avail) && avail.length >= cfg.systems.length && avail.every((a) => a.status === 'OK');
+// カーリルは直前の問い合わせ結果を status "Cache" で返すことがある(正常な応答)
+const okStatus = (st) => st === 'OK' || st === 'Cache';
+const isOk = (avail) => Array.isArray(avail) && avail.length >= cfg.systems.length && avail.every((a) => okStatus(a.status));
 const isNone = (avail) => isOk(avail) && avail.every((a) => a.libs.length === 0);
 const ageDays = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
 
