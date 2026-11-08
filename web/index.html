@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブクログ未読本・図書館チェック</title>
+<style>
+:root{--ink:#202b36;--muted:#65727e;--line:#dce3e8;--blue:#175f87;--pale:#eef6fa;--green:#21734a;--orange:#94600b;--red:#a33636}
+*{box-sizing:border-box}
+body{margin:0;background:#f5f7f8;color:var(--ink);font:15px/1.55 system-ui,"Yu Gothic UI",Meiryo,sans-serif}
+main{max-width:1050px;margin:28px auto;padding:0 18px 60px}
+h1{font-size:25px;margin:0 0 5px}h2{font-size:18px;margin:0 0 10px}
+.intro{color:var(--muted);margin:0 0 18px;font-size:13px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0;box-shadow:0 2px 8px #17283808}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.stat{background:var(--pale);border-radius:9px;padding:8px 14px;min-width:110px}
+.stat b{display:block;font-size:22px;line-height:1.2}.stat span{font-size:12px;color:var(--muted)}
+.actions{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.actions label{font-size:14px;display:flex;gap:5px;align-items:center}
+select{height:34px;border:1px solid #bfcbd3;border-radius:7px;padding:0 8px;font:inherit}
+button{border:0;border-radius:7px;background:var(--blue);color:#fff;padding:9px 15px;font:inherit;font-weight:650;cursor:pointer}
+button:disabled{opacity:.55;cursor:wait}
+button.plain{background:none;color:var(--blue);padding:4px 6px;font-weight:500;text-decoration:underline;font-size:13px}
+.status{color:var(--muted);font-size:13px}
+.book{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(220px,2fr) minmax(220px,2fr) auto;gap:12px;align-items:start}
+.book:first-child{border-top:0}
+.title{font-weight:700}.title a{color:var(--ink);text-decoration:none}.title a:hover{text-decoration:underline}
+.sub{color:var(--muted);font-size:13px}
+.chip{display:inline-block;border-radius:20px;background:#e9eff3;padding:1px 9px;font-size:12px;margin-left:6px;font-weight:500}
+.sys{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:14px}
+.sys .name{color:var(--muted);min-width:7.5em}
+.st{font-weight:700}.st.ok{color:var(--green)}.st.out{color:var(--orange)}.st.held{color:var(--blue)}.st.none{color:var(--muted);font-weight:500}.st.err{color:var(--red)}
+a{color:var(--blue)}.links{display:flex;gap:8px;flex-wrap:wrap;font-size:13px}
+.badge{display:inline-block;border-radius:20px;background:var(--pale);padding:2px 9px;font-size:12px;font-weight:500}
+summary{cursor:pointer;font-weight:700;font-size:16px}
+.note{color:var(--muted);font-size:13px;margin:8px 0}
+.empty{color:var(--muted);padding:6px 0}
+.footer{font-size:12px;color:var(--muted)}
+@media(max-width:700px){.book{grid-template-columns:1fr}.card{padding:14px}}
+</style>
+</head>
+<body><main>
+<h1>ブクログ未読本・図書館チェック</h1>
+<p class="intro" id="meta"></p>
+
+<section class="card">
+  <div class="summary" id="summary"></div>
+  <div class="actions">
+    <button id="refreshBtn">貸出状況を最新に更新</button>
+    <label><input type="checkbox" id="onlyAvail"> 貸出可のみ</label>
+    <label>図書館 <select id="libSel"></select></label>
+    <button id="keyBtn" class="plain" type="button">APIキー設定</button>
+    <span class="status" id="status"></span>
+  </div>
+</section>
+
+<section class="card">
+  <h2>所蔵あり <span class="badge" id="cHeld"></span></h2>
+  <div id="held"></div>
+</section>
+
+<section class="card">
+  <details>
+    <summary>蔵書なし <span class="badge" id="cNone"></span></summary>
+    <div id="none"></div>
+  </details>
+</section>
+
+<section class="card">
+  <details>
+    <summary>ISBNがなく照合できない本 <span class="badge" id="cNoIsbn"></span></summary>
+    <p class="note">Kindle版のみの登録などで、ISBNがない本です。書名でカーリルを検索できます。</p>
+    <div id="noisbn"></div>
+  </details>
+</section>
+
+<p class="footer">所蔵情報はカーリルAPIの応答で、数時間おきに自動更新されます。「貸出状況を最新に更新」は、今この瞬間の貸出状況を取得し直します（初回のみAPIキーの入力が必要です）。</p>
+</main>
+<script>
+(async()=>{
+const $=id=>document.getElementById(id);
+let DATA;
+try{
+  const r=await fetch('data.json?t='+Date.now());
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  DATA=await r.json();
+}catch(e){
+  document.getElementById('meta').textContent='データを読み込めませんでした（'+e.message+'）。GitHub Actionsの実行が完了しているか確認してください。';
+  return;
+}
+const STATUS_LABEL={'0':'未設定','1':'読みたい','2':'いま読んでる','3':'読み終わった','4':'積読'};
+const arr=x=>Array.isArray(x)?x:(x==null||x===''?[]:[x]);
+const books=DATA.books.map(b=>({...b,authors:arr(b.authors),avail:arr(b.avail).map(a=>({...a,libs:arr(a.libs)}))}));
+const systems=arr(DATA.systems);
+const sysName=id=>{const s=systems.find(x=>x.id===id);return s?s.name:id};
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function safeUrl(u){return /^https?:\/\//i.test(u||'')?u:null}
+function link(text,href){const a=el('a',null,text);a.href=href;a.target='_blank';a.rel='noopener';return a}
+
+// ---- classification ----
+function relevant(b){const sel=$('libSel').value;return sel==='all'?b.avail:b.avail.filter(a=>a.system===sel)}
+function kindOf(b){
+  const rel=relevant(b);
+  const libs=rel.flatMap(a=>a.libs);
+  if(libs.some(l=>l.state==='貸出可'))return 'avail';
+  if(libs.length)return 'held';
+  if(rel.some(a=>a.status==='Error'||a.status==='Running'))return 'error';
+  return 'none';
+}
+const ORDER={avail:0,held:1,error:2,none:3};
+function stClass(state){return state==='貸出可'?'ok':state==='貸出中'?'out':'held'}
+
+// ---- rendering ----
+function bookRow(b){
+  const row=el('div','book');
+  const info=el('div');
+  const t=el('div','title');
+  const href=b.asin?'https://booklog.jp/item/1/'+encodeURIComponent(b.asin):null;
+  t.append(href?link(b.title,href):document.createTextNode(b.title));
+  t.append(el('span','chip',STATUS_LABEL[b.status]||b.status));
+  info.append(t,el('div','sub',b.authors.join(' / ')||'著者情報なし'));
+  if(b.isbn)info.append(el('div','sub','ISBN '+b.isbn+(b.stale?'（最新の取得に失敗。前回の結果です）':'')));
+  const mid=el('div');
+  if(b.hasIsbn){
+    const list=systems.length?systems.map(s=>b.avail.find(a=>a.system===s.id)||{system:s.id,status:'',libs:[]}):b.avail;
+    list.forEach(a=>{
+      const line=el('div','sys');
+      line.append(el('span','name',sysName(a.system)));
+      if(a.libs.length){
+        a.libs.forEach(l=>{
+          const s=el('span','st '+stClass(l.state),l.state);
+          if(a.libs.length>1||l.name!==sysName(a.system))s.title=l.name;
+          line.append(s);
+        });
+        const u=safeUrl(a.reserveurl);if(u)line.append(link('図書館サイトで見る',u));
+      }else if(a.status==='Error'){line.append(el('span','st err','検索エラー'))}
+      else if(a.status==='Running'||a.status===''){line.append(el('span','st err','未取得'))}
+      else line.append(el('span','st none','蔵書なし'));
+      mid.append(line);
+    });
+  }
+  const links=el('div','links');
+  if(b.hasIsbn)links.append(link('カーリルで確認','https://calil.jp/book/'+b.isbn));
+  else links.append(link('カーリルで書名検索','https://calil.jp/search?q='+encodeURIComponent(b.title)));
+  row.append(info,mid,links);
+  return row;
+}
+function fill(id,items,emptyMsg){
+  const box=$(id);box.innerHTML='';
+  if(!items.length){box.append(el('div','empty',emptyMsg));return}
+  items.forEach(b=>box.append(bookRow(b)));
+}
+function render(){
+  const onlyAvail=$('onlyAvail').checked;
+  const checked=books.filter(b=>b.hasIsbn);
+  const noIsbn=books.filter(b=>!b.hasIsbn);
+  const kinds=checked.map(b=>({b,k:kindOf(b)}));
+  const sorted=kinds.slice().sort((x,y)=>ORDER[x.k]-ORDER[y.k]||x.b.title.localeCompare(y.b.title,'ja'));
+  const held=sorted.filter(x=>x.k==='avail'||x.k==='held'||x.k==='error').filter(x=>!onlyAvail||x.k==='avail').map(x=>x.b);
+  const none=sorted.filter(x=>x.k==='none').map(x=>x.b);
+  const cnt=k=>kinds.filter(x=>x.k===k).length;
+  const by=s=>books.filter(b=>b.status===s).length;
+  $('summary').innerHTML='';
+  [[books.length,'対象の本'],[cnt('avail'),'貸出可'],[cnt('held'),'所蔵あり（貸出中など）'],[cnt('none'),'蔵書なし'],[noIsbn.length,'ISBNなし']].forEach(([n,l])=>{
+    const s=el('div','stat');s.append(el('b',null,String(n)),el('span',null,l));$('summary').append(s);
+  });
+  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）／ 対象: 読みたい '+by('1')+'・積読 '+by('4')+(by('0')?'・未設定 '+by('0'):'')+(by('2')?'・いま読んでる '+by('2'):'')+(by('3')?'・読み終わった '+by('3'):'')+' ／ 取得: '+new Date(DATA.generated).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  $('cHeld').textContent=held.length+'冊';$('cNone').textContent=none.length+'冊';$('cNoIsbn').textContent=noIsbn.length+'冊';
+  fill('held',held,onlyAvail?'貸出可の本はありません。':'所蔵がある本はありません。');
+  fill('none',none,'該当なし');
+  fill('noisbn',noIsbn,'該当なし');
+}
+
+// ---- live refresh (JSONP) : APIキーはこの端末のブラウザにだけ保存 ----
+const KEYNAME='calilAppKey';
+let _key='';
+try{_key=localStorage.getItem(KEYNAME)||''}catch{}
+const KEY=()=>_key;
+function setKey(){
+  const v=prompt('カーリルAPIキーを入力してください。この端末のブラウザにだけ保存されます（空欄で削除）。',_key);
+  if(v===null)return false;
+  _key=v.trim();
+  try{_key?localStorage.setItem(KEYNAME,_key):localStorage.removeItem(KEYNAME)}catch{}
+  return !!_key;
+}
+function jsonp(url,timeout=25000){
+  return new Promise((resolve,reject)=>{
+    const cb='calil_cb_'+Math.random().toString(36).slice(2);
+    const sc=document.createElement('script');let done=false;
+    const timer=setTimeout(()=>fin(new Error('応答がありませんでした')),timeout);
+    function fin(err,d){if(done)return;done=true;clearTimeout(timer);delete window[cb];sc.remove();err?reject(err):resolve(d)}
+    window[cb]=d=>fin(null,d);
+    sc.onerror=()=>fin(new Error('カーリルAPIに接続できませんでした'));
+    const u=new URL(url);u.searchParams.set('callback',cb);sc.src=u.toString();document.head.append(sc);
+  });
+}
+async function calilCheck(isbns){
+  const ids=systems.map(s=>s.id).join(',');
+  const q=new URL('https://api.calil.jp/check');
+  q.searchParams.set('appkey',KEY());q.searchParams.set('isbn',isbns.join(','));
+  q.searchParams.set('systemid',ids);q.searchParams.set('format','json');
+  let j=await jsonp(q.toString());
+  for(let i=0;j.continue&&i<40;i++){
+    await new Promise(r=>setTimeout(r,2200));
+    const p=new URL('https://api.calil.jp/check');
+    p.searchParams.set('appkey',KEY());p.searchParams.set('session',j.session);p.searchParams.set('format','json');
+    j=await jsonp(p.toString());
+  }
+  return j.books||{};
+}
+function toAvail(entry){
+  return Object.entries(entry||{}).map(([system,d])=>({
+    system,status:d.status||'',reserveurl:d.reserveurl||'',
+    libs:Object.entries(d.libkey||{}).map(([name,state])=>({name,state}))
+  }));
+}
+$('keyBtn').addEventListener('click',()=>{setKey();$('status').textContent=_key?'APIキーを保存しました。':'APIキーを削除しました。'});
+$('refreshBtn').addEventListener('click',async()=>{
+  if(!_key&&!setKey())return;
+  const btn=$('refreshBtn');btn.disabled=true;
+  const targets=books.filter(b=>b.hasIsbn);
+  const isbns=[...new Set(targets.map(b=>b.isbn))];
+  let failed=0;
+  for(let i=0;i<isbns.length;i+=30){
+    const chunk=isbns.slice(i,i+30);
+    $('status').textContent='更新中… '+Math.min(i+30,isbns.length)+' / '+isbns.length;
+    try{
+      const res=await calilCheck(chunk);
+      targets.forEach(b=>{if(chunk.includes(b.isbn)&&res[b.isbn])b.avail=toAvail(res[b.isbn])});
+    }catch(e){failed+=chunk.length}
+    render();
+  }
+  const now=new Date();
+  $('status').textContent=(failed?failed+'冊は更新できませんでした。':'')+now.getHours()+':'+String(now.getMinutes()).padStart(2,'0')+' に更新しました。';
+  btn.disabled=false;
+});
+
+// ---- init ----
+const sel=$('libSel');
+[['all','すべて'],...systems.map(s=>[s.id,s.name])].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;sel.append(o)});
+sel.addEventListener('change',render);$('onlyAvail').addEventListener('change',render);
+render();
+})();
+</script>
+</body>
+</html>

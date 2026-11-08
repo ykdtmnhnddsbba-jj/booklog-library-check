@@ -1,0 +1,10 @@
+{
+  "booklogUser": "ykdtmnhnddsbba",
+  "systems": [
+    { "id": "Gifu_Ikeda", "name": "池田町図書館" },
+    { "id": "Gifu_Godo", "name": "神戸町立図書館" }
+  ],
+  "targetStatuses": ["1", "4", "0"],
+  "noneRecheckDays": 7,
+  "_memo": "targetStatuses: 1=読みたい, 4=積読, 0=未設定(状況が空欄)。2=いま読んでる, 3=読み終わった を足すとそれも調べます。noneRecheckDays: 「蔵書なし」だった本を再確認するまでの日数。所蔵がある本は毎回貸出状況を取り直します。"
+}
