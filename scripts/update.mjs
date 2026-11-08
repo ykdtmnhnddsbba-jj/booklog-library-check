@@ -1,4 +1,6 @@
-// ブクログ公開本棚 -> カーリル所蔵・貸出状況 -> _site/data.json
+// data/shelf.json (ブクログ本棚の書き出し) -> カーリル所蔵・貸出状況 -> _site/data.json
+// ブクログはGitHubのサーバーからのアクセスをボット判定ではじくため、本棚の一覧はブラウザで書き出して
+// data/shelf.json に置く(web/tools.html 参照)。ここでは貸出状況の取得と差分再利用だけを行う。
 // 依存パッケージなし (Node 20+)。環境変数 CALIL_APPKEY が必須。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,27 +8,24 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
+const shelfFile = process.env.SHELF_FILE || path.join(root, 'data', 'shelf.json');
 
 const KEY = process.env.CALIL_APPKEY;
 if (!KEY) { console.error('CALIL_APPKEY is not set'); process.exit(1); }
-const BOOKLOG = process.env.BOOKLOG_BASE || 'https://booklog.jp';
 const CALIL = process.env.CALIL_BASE || 'https://api.calil.jp';
 const OUT = process.env.OUT_DIR || path.join(root, '_site');
 const SITE_URL = (process.env.SITE_URL || '').replace(/\/$/, '');
 const PREV_URL = process.env.PREV_DATA_URL || (SITE_URL ? SITE_URL + '/data.json' : '');
 const POLL_MS = Number(process.env.POLL_MS ?? 2200);
-const PAGE_WAIT_MS = Number(process.env.PAGE_WAIT_MS ?? 800);
 const NONE_DAYS = cfg.noneRecheckDays ?? 7;
 const CHUNK = 30;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const mask = (s) => String(s).split(KEY).join('***');
 
-let lastMeta = '';
 async function getText(url, tries = 3) {
   for (let i = 1; ; i++) {
     try {
       const r = await fetch(url);
-      lastMeta = `status=${r.status} type=${r.headers.get('content-type')} server=${r.headers.get('server')} len=${r.headers.get('content-length')} via=${r.headers.get('via')}`;
       if (!r.ok) throw new Error(`HTTP ${r.status} ${mask(url)}`);
       return await r.text();
     } catch (e) {
@@ -36,50 +35,10 @@ async function getText(url, tries = 3) {
   }
 }
 
-const ENT = { quot: '"', amp: '&', lt: '<', gt: '>', apos: "'" };
-function decode(s) {
-  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
-    if (e[0] === '#') {
-      const c = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-      return Number.isFinite(c) ? String.fromCodePoint(c) : m;
-    }
-    return ENT[e.toLowerCase()] ?? m;
-  });
-}
-
-// ---- 1. ブクログ公開本棚 ----
-async function fetchShelf() {
-  const books = [];
-  const seen = new Set();
-  for (let p = 1; p <= 80; p++) {
-    const html = await getText(`${BOOKLOG}/users/${encodeURIComponent(cfg.booklogUser)}?page=${p}`);
-    let added = 0;
-    for (const m of html.matchAll(/data-book='([^']*)'/g)) {
-      let o;
-      try { o = JSON.parse(decode(m[1])); } catch { continue; }
-      if (!o || !o.book_id || seen.has(String(o.book_id))) continue; // ページごとのダミー要素は book_id がない
-      seen.add(String(o.book_id));
-      added++;
-      const it = o.item || {};
-      books.push({
-        bookId: String(o.book_id),
-        status: o.status ? String(o.status) : '0',
-        title: o.title || it.title || '',
-        authors: Array.isArray(it.authors) ? it.authors : [],
-        ean: String(it.EAN || ''),
-        asin: String(o.id || it.id || ''),
-      });
-    }
-    console.log(`booklog page ${p}: +${added} (total ${books.length})`);
-    if (p === 1 && !added) {
-      const title = (html.match(/<title>([^<]*)<\/title>/i) || [])[1] || '';
-      console.log(`[diag] ${lastMeta} length=${html.length} title=${JSON.stringify(title)} head=${JSON.stringify(html.slice(0, 300))}`);
-    }
-    if (!added) break;
-    await sleep(PAGE_WAIT_MS);
-  }
-  return books;
-}
+// ---- 1. 本棚の書き出し ----
+const shelf = JSON.parse(fs.readFileSync(shelfFile, 'utf8'));
+if (!Array.isArray(shelf.books) || !shelf.books.length) throw new Error('data/shelf.json に本がありません。');
+console.log(`shelf.json: ${shelf.books.length} books (total ${shelf.total}), exported ${shelf.fetchedAt}`);
 
 // ---- 2. カーリル ----
 async function calilCheck(isbns) {
@@ -107,45 +66,37 @@ const ageDays = (iso) => (Date.now() - new Date(iso).getTime()) / 86400000;
 
 async function loadPrev() {
   const map = new Map();
-  let shelfTotal = 0;
-  if (!PREV_URL) return { map, shelfTotal };
+  if (!PREV_URL) return map;
   try {
     const r = await fetch(PREV_URL + (PREV_URL.includes('?') ? '&' : '?') + 't=' + Date.now());
-    if (!r.ok) { console.log(`previous data: none (HTTP ${r.status})`); return { map, shelfTotal }; }
+    if (!r.ok) { console.log(`previous data: none (HTTP ${r.status})`); return map; }
     const d = await r.json();
-    shelfTotal = d.shelfTotal || 0;
     for (const b of d.books || []) if (b.isbn) map.set(b.isbn, { avail: b.avail || [], checkedAt: b.checkedAt || '' });
     console.log(`previous data: ${map.size} books`);
   } catch (e) {
     console.log('previous data: unavailable (' + e.message + ')');
   }
-  return { map, shelfTotal };
+  return map;
 }
 
 // ---- main ----
-const shelf = await fetchShelf();
 const prev = await loadPrev();
-if (!shelf.length) throw new Error('ブクログから1冊も取得できませんでした。公開設定とbooklogUserを確認してください。');
-if (prev.shelfTotal && shelf.length < prev.shelfTotal * 0.5) {
-  throw new Error(`取得冊数が前回(${prev.shelfTotal})の半分未満(${shelf.length})です。公開データを上書きしません。`);
-}
-
 const targetSet = new Set(cfg.targetStatuses.map(String));
-const targets = shelf.filter((b) => targetSet.has(b.status));
-const hasIsbn = (b) => /^97[89]\d{10}$/.test(b.ean);
+const targets = shelf.books.filter((b) => targetSet.has(String(b.status || '0')));
+const hasIsbn = (b) => /^97[89]\d{10}$/.test(b.ean || '');
 const isbns = [...new Set(targets.filter(hasIsbn).map((b) => b.ean))];
 
 const result = new Map(); // isbn -> {avail, checkedAt, stale?}
 const todo = [];
 let reused = 0;
 for (const isbn of isbns) {
-  const p = prev.map.get(isbn);
+  const p = prev.get(isbn);
   if (p && isNone(p.avail) && p.checkedAt && ageDays(p.checkedAt) < NONE_DAYS) {
     result.set(isbn, { avail: p.avail, checkedAt: p.checkedAt });
     reused++;
   } else todo.push(isbn);
 }
-console.log(`shelf ${shelf.length}, targets ${targets.length}, with ISBN ${isbns.length}, reuse(蔵書なし) ${reused}, check ${todo.length}`);
+console.log(`targets ${targets.length}, with ISBN ${isbns.length}, reuse(蔵書なし) ${reused}, check ${todo.length}`);
 
 let failed = 0;
 for (let i = 0; i < todo.length; i += CHUNK) {
@@ -156,15 +107,15 @@ for (let i = 0; i < todo.length; i += CHUNK) {
     const now = new Date().toISOString();
     for (const isbn of chunk) {
       const avail = toAvail(res[isbn]);
-      if (isOk(avail)) result.set(isbn, { avail, checkedAt: now });
-      else throw new Error(`incomplete response for ${isbn}`);
+      if (!isOk(avail)) throw new Error(`incomplete response for ${isbn}`);
+      result.set(isbn, { avail, checkedAt: now });
     }
   } catch (e) {
     console.warn('chunk failed: ' + mask(e.message));
     for (const isbn of chunk) {
       if (result.has(isbn)) continue;
       failed++;
-      const p = prev.map.get(isbn);
+      const p = prev.get(isbn);
       if (p && isOk(p.avail)) result.set(isbn, { avail: p.avail, checkedAt: p.checkedAt, stale: true });
       else result.set(isbn, { avail: [{ system: '', status: 'Error', reserveurl: '', libs: [] }], checkedAt: '', stale: true });
     }
@@ -178,19 +129,20 @@ const books = targets.map((b) => {
   const ok = hasIsbn(b);
   const r = ok ? result.get(b.ean) : null;
   return {
-    title: b.title, authors: b.authors, isbn: ok ? b.ean : '', asin: b.asin, status: b.status, hasIsbn: ok,
+    title: b.title, authors: b.authors || [], isbn: ok ? b.ean : '', asin: b.asin || '', status: String(b.status || '0'), hasIsbn: ok,
     avail: r ? r.avail : [], checkedAt: r ? r.checkedAt : '', ...(r && r.stale ? { stale: true } : {}),
   };
 });
 const data = {
   generated: new Date().toISOString(),
-  user: cfg.booklogUser,
-  shelfTotal: shelf.length,
+  shelfExported: shelf.fetchedAt || '',
+  user: shelf.user || cfg.booklogUser,
+  shelfTotal: shelf.total || shelf.books.length,
   systems: cfg.systems,
   books,
 };
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'data.json'), JSON.stringify(data));
-fs.copyFileSync(path.join(root, 'web', 'index.html'), path.join(OUT, 'index.html'));
+for (const f of ['index.html', 'tools.html']) fs.copyFileSync(path.join(root, 'web', f), path.join(OUT, f));
 const held = books.filter((b) => b.avail.some((a) => a.libs.length)).length;
 console.log(`done: ${books.length} books, held ${held}, failed ${failed} -> ${path.join(OUT, 'data.json')}`);

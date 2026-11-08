@@ -74,7 +74,7 @@ summary{cursor:pointer;font-weight:700;font-size:16px}
   </details>
 </section>
 
-<p class="footer">所蔵情報はカーリルAPIの応答で、数時間おきに自動更新されます。「貸出状況を最新に更新」は、今この瞬間の貸出状況を取得し直します（初回のみAPIキーの入力が必要です）。</p>
+<p class="footer"><a href="tools.html">本棚を更新する方法</a> ／ 所蔵情報はカーリルAPIの応答で、数時間おきに自動更新されます。「貸出状況を最新に更新」は、今この瞬間の貸出状況を取得し直します（初回のみAPIキーの入力が必要です）。</p>
 </main>
 <script>
 (async()=>{
@@ -88,6 +88,7 @@ try{
   document.getElementById('meta').textContent='データを読み込めませんでした（'+e.message+'）。GitHub Actionsの実行が完了しているか確認してください。';
   return;
 }
+const fmt=iso=>new Date(iso).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
 const STATUS_LABEL={'0':'未設定','1':'読みたい','2':'いま読んでる','3':'読み終わった','4':'積読'};
 const arr=x=>Array.isArray(x)?x:(x==null||x===''?[]:[x]);
 const books=DATA.books.map(b=>({...b,authors:arr(b.authors),avail:arr(b.avail).map(a=>({...a,libs:arr(a.libs)}))}));
@@ -164,7 +165,7 @@ function render(){
   [[books.length,'対象の本'],[cnt('avail'),'貸出可'],[cnt('held'),'所蔵あり（貸出中など）'],[cnt('none'),'蔵書なし'],[noIsbn.length,'ISBNなし']].forEach(([n,l])=>{
     const s=el('div','stat');s.append(el('b',null,String(n)),el('span',null,l));$('summary').append(s);
   });
-  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）／ 対象: 読みたい '+by('1')+'・積読 '+by('4')+(by('0')?'・未設定 '+by('0'):'')+(by('2')?'・いま読んでる '+by('2'):'')+(by('3')?'・読み終わった '+by('3'):'')+' ／ 取得: '+new Date(DATA.generated).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）／ 対象: 読みたい '+by('1')+'・積読 '+by('4')+(by('0')?'・未設定 '+by('0'):'')+(by('2')?'・いま読んでる '+by('2'):'')+(by('3')?'・読み終わった '+by('3'):'')+' ／ 貸出状況の取得: '+fmt(DATA.generated)+(DATA.shelfExported?' ／ 本棚の書き出し: '+fmt(DATA.shelfExported):'');
   $('cHeld').textContent=held.length+'冊';$('cNone').textContent=none.length+'冊';$('cNoIsbn').textContent=noIsbn.length+'冊';
   fill('held',held,onlyAvail?'貸出可の本はありません。':'所蔵がある本はありません。');
   fill('none',none,'該当なし');

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本棚を更新する方法</title>
+<style>
+body{margin:0;background:#f5f7f8;color:#202b36;font:15px/1.7 system-ui,"Yu Gothic UI",Meiryo,sans-serif}
+main{max-width:760px;margin:28px auto;padding:0 18px 60px}
+h1{font-size:24px}h2{font-size:17px;margin-top:26px}
+.card{background:#fff;border:1px solid #dce3e8;border-radius:12px;padding:16px 20px;margin:14px 0}
+.bm{display:inline-block;background:#175f87;color:#fff;border-radius:8px;padding:10px 16px;font-weight:700;text-decoration:none;cursor:grab}
+textarea{width:100%;height:110px;font:12px/1.4 monospace}
+.note{color:#65727e;font-size:13px}
+</style></head><body><main>
+<h1>本棚を更新する方法</h1>
+<p>貸出状況は自動で更新されますが、<b>本の一覧（ブクログの本棚）は、本を追加・状況を変えたときに、この手順で書き出します</b>。ブクログは、GitHubのサーバーからの自動アクセスを受け付けないため、ふだん使っているブラウザで書き出します。1〜2分で終わります。</p>
+
+<h2>1. 最初に1回だけ：ブックマークを作る</h2>
+<div class="card">
+<p>下のボタンを、ブラウザのブックマークバーにドラッグしてください。</p>
+<p><a class="bm" href="javascript:(async()=&gt;{const m=location.pathname.match(/^\/users\/([^\/]+)/);if(location.hostname!==&#x27;booklog.jp&#x27;||!m){alert(&#x27;ブクログの本棚ページ（booklog.jp/users/…）を開いてから押してください&#x27;);return;}const user=m[1];const dec=s=&gt;{const t=document.createElement(&#x27;textarea&#x27;);t.innerHTML=s;return t.value;};const all=[],seen=new Set();for(let p=1;p&lt;=80;p++){const h=await(await fetch(&#x27;/users/&#x27;+user+&#x27;?page=&#x27;+p,{credentials:&#x27;omit&#x27;})).text();let added=0;for(const x of h.matchAll(/data-book=&#x27;([^&#x27;]*)&#x27;/g)){let o;try{o=JSON.parse(dec(x[1]));}catch(e){continue;}if(!o||!o.book_id||seen.has(String(o.book_id)))continue;seen.add(String(o.book_id));added++;const it=o.item||{};all.push({bookId:String(o.book_id),status:o.status?String(o.status):&#x27;0&#x27;,title:o.title||&#x27;&#x27;,authors:Array.isArray(it.authors)?it.authors:[],ean:String(it.EAN||&#x27;&#x27;),asin:String(o.id||it.id||&#x27;&#x27;)});}if(!added)break;await new Promise(r=&gt;setTimeout(r,500));}const counts={};all.forEach(b=&gt;{counts[b.status]=(counts[b.status]||0)+1;});const shelf={user:user,fetchedAt:new Date().toISOString(),total:all.length,counts:counts,books:all.filter(b=&gt;b.status!==&#x27;3&#x27;)};const a=document.createElement(&#x27;a&#x27;);a.href=URL.createObjectURL(new Blob([JSON.stringify(shelf)],{type:&#x27;application/json&#x27;}));a.download=&#x27;shelf.json&#x27;;document.body.append(a);a.click();a.remove();alert(&#x27;shelf.json を保存しました（&#x27;+shelf.books.length+&#x27;冊 / 全&#x27;+all.length+&#x27;冊）。&#x27;);})()">本棚を書き出す</a></p>
+<p class="note">ドラッグできない場合：新しいブックマークを作り、名前を「本棚を書き出す」、URL欄に下のコードを貼り付けてください。</p>
+<textarea readonly onclick="this.select()">javascript:(async()=&gt;{const m=location.pathname.match(/^\/users\/([^\/]+)/);if(location.hostname!=='booklog.jp'||!m){alert('ブクログの本棚ページ（booklog.jp/users/…）を開いてから押してください');return;}const user=m[1];const dec=s=&gt;{const t=document.createElement('textarea');t.innerHTML=s;return t.value;};const all=[],seen=new Set();for(let p=1;p&lt;=80;p++){const h=await(await fetch('/users/'+user+'?page='+p,{credentials:'omit'})).text();let added=0;for(const x of h.matchAll(/data-book='([^']*)'/g)){let o;try{o=JSON.parse(dec(x[1]));}catch(e){continue;}if(!o||!o.book_id||seen.has(String(o.book_id)))continue;seen.add(String(o.book_id));added++;const it=o.item||{};all.push({bookId:String(o.book_id),status:o.status?String(o.status):'0',title:o.title||'',authors:Array.isArray(it.authors)?it.authors:[],ean:String(it.EAN||''),asin:String(o.id||it.id||'')});}if(!added)break;await new Promise(r=&gt;setTimeout(r,500));}const counts={};all.forEach(b=&gt;{counts[b.status]=(counts[b.status]||0)+1;});const shelf={user:user,fetchedAt:new Date().toISOString(),total:all.length,counts:counts,books:all.filter(b=&gt;b.status!=='3')};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(shelf)],{type:'application/json'}));a.download='shelf.json';document.body.append(a);a.click();a.remove();alert('shelf.json を保存しました（'+shelf.books.length+'冊 / 全'+all.length+'冊）。');})()</textarea>
+</div>
+
+<h2>2. 本棚を更新するたびに</h2>
+<div class="card"><ol>
+<li><a href="https://booklog.jp/users/ykdtmnhnddsbba" target="_blank" rel="noopener">ブクログの自分の本棚</a>を開く</li>
+<li>ブックマーク「本棚を書き出す」をクリック → <code>shelf.json</code> がダウンロードされる</li>
+<li><a href="https://github.com/ykdtmnhnddsbba-jj/booklog-library-check/tree/main/data" target="_blank" rel="noopener">GitHubの data フォルダ</a>を開き、「Add file」→「Upload files」で <code>shelf.json</code> をドラッグし、「Commit changes」を押す</li>
+<li>1〜2分後、自動で貸出状況の取得が走り、このサイトに反映される（Actionsタブで進行を確認できます）</li>
+</ol></div>
+<p><a href="index.html">← 結果ページに戻る</a></p>
+</main></body></html>
