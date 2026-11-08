@@ -1,6 +1,6 @@
 // data/shelf.json (ブクログ本棚の書き出し) -> カーリル所蔵・貸出状況 -> _site/data.json
 // ブクログはGitHubのサーバーからのアクセスをボット判定ではじくため、本棚の一覧はブラウザで書き出して
-// data/shelf.json に置く(web/tools.html 参照)。ここでは貸出状況の取得と差分再利用だけを行う。
+// data/shelf.json に置く(公開ページの「更新のしかた」参照)。ここでは貸出状況の取得と差分再利用だけを行う。
 // 依存パッケージなし (Node 20+)。環境変数 CALIL_APPKEY が必須。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -129,7 +129,7 @@ const books = targets.map((b) => {
   const ok = hasIsbn(b);
   const r = ok ? result.get(b.ean) : null;
   return {
-    title: b.title, authors: b.authors || [], isbn: ok ? b.ean : '', asin: b.asin || '', status: String(b.status || '0'), hasIsbn: ok,
+    title: b.title, authors: b.authors || [], isbn: ok ? b.ean : '', asin: b.asin || '', image: b.image || '', status: String(b.status || '0'), hasIsbn: ok,
     avail: r ? r.avail : [], checkedAt: r ? r.checkedAt : '', ...(r && r.stale ? { stale: true } : {}),
   };
 });
@@ -143,6 +143,6 @@ const data = {
 };
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'data.json'), JSON.stringify(data));
-for (const f of ['index.html', 'tools.html']) fs.copyFileSync(path.join(root, 'web', f), path.join(OUT, f));
+fs.copyFileSync(path.join(root, 'web', 'index.html'), path.join(OUT, 'index.html'));
 const held = books.filter((b) => b.avail.some((a) => a.libs.length)).length;
 console.log(`done: ${books.length} books, held ${held}, failed ${failed} -> ${path.join(OUT, 'data.json')}`);
