@@ -253,7 +253,7 @@ function render(){
   const base=books.filter(b=>S.sts.has(b.status)&&(!q||(b.title+' '+b.authors.join(' ')).toLowerCase().includes(q)));
   const withKind=base.map(b=>({b,k:kindOf(b)}));
   const cnt=k=>withKind.filter(x=>x.k===k).length;
-  const segs=[['avail','貸出可',cnt('avail')],['held','貸出中・館内のみ',cnt('held')],['none','蔵書なし',cnt('none')+cnt('error')],['noisbn','ISBNなし',cnt('noisbn')],['all','すべて',withKind.length]];
+  const segs=[['owned','所蔵あり',cnt('avail')+cnt('held')],['avail','貸出可',cnt('avail')],['held','貸出中・館内のみ',cnt('held')],['none','蔵書なし',cnt('none')+cnt('error')],['noisbn','ISBNなし',cnt('noisbn')],['all','すべて',withKind.length]];
   if(S.seg===null)S.seg=cnt('avail')>0?'avail':'all';
   const segBox=$('seg');segBox.innerHTML='';
   segs.forEach(([k,t,n])=>{const b=el('button',S.seg===k?'on':'',t);b.type='button';b.append(el('small',null,String(n)));b.addEventListener('click',()=>{S.seg=k;render()});segBox.append(b)});
@@ -263,7 +263,7 @@ function render(){
   const sc=$('stChips');sc.innerHTML='';
   present.sort().forEach(s=>sc.append(chip(STATUS_LABEL[s]||s,books.filter(b=>b.status===s).length,S.sts.has(s),()=>{S.sts.has(s)?S.sts.delete(s):S.sts.add(s);render()})));
 
-  let rows=withKind.filter(x=>S.seg==='all'||x.k===S.seg||(S.seg==='none'&&x.k==='error'));
+  let rows=withKind.filter(x=>S.seg==='all'||x.k===S.seg||(S.seg==='none'&&x.k==='error')||(S.seg==='owned'&&(x.k==='avail'||x.k==='held')));
   rows.sort((x,y)=>S.sort==='title'?x.b.title.localeCompare(y.b.title,'ja'):S.sort==='new'?x.b.idx-y.b.idx:(ORDER[x.k]-ORDER[y.k]||x.b.idx-y.b.idx));
   const list=$('list');list.innerHTML='';
   if(!rows.length)list.append(Object.assign(el('div','empty','該当する本はありません。'),{style:'grid-column:1/-1'}));
