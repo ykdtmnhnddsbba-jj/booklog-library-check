@@ -1,4 +1,6 @@
-{"user": "ykdtmnhnddsbba", "fetchedAt": "2026-11-16T07:19:51.890Z", "total": 368, "counts": {"0":1,"1":65,"2":3,"3":299},"books":[
+{"user": "ykdtmnhnddsbba", "fetchedAt": "2026-11-16T10:27:21.093Z", "total": 370, "counts": {"0":1,"1":66,"2":4,"3":299},"books":[
+{"bookId":"258837931","status":"2","title":"エンジニアのAI壁打ち実践術","authors":["平湯太郎","米道卓音","髙槻大貴"],"ean":"9784297158194","asin":"4297158191","image":"https://image.st-booklog.jp/clVEOTlUZFdFeHR4V3RCNGM0QTVpQT09.jpg"},
+{"bookId":"258833636","status":"1","title":"神話","authors":["知念実希人"],"ean":"9784408539287","asin":"4408539287","image":"https://m.media-amazon.com/images/I/51SAglxzclL._SL500_.jpg"},
 {"bookId":"258825513","status":"1","title":"ほんとうのことを書く練習 「わたしの言葉」で他者とつながる文章術","authors":["土門蘭"],"ean":"9784478123867","asin":"4478123861","image":"https://m.media-amazon.com/images/I/41f7IbJxxtL._SL500_.jpg"},
 {"bookId":"258825508","status":"0","title":"死ぬまで生きる日記","authors":["土門蘭"],"ean":"9784910790091","asin":"4910790098","image":"https://image.st-booklog.jp/K2R6TkErSDYxTUx2UW5FbWZNendzZz09.jpg"},
 {"bookId":"258280581","status":"1","title":"私のせいではありません","authors":["水生大海"],"ean":"9784103567110","asin":"4103567112","image":"https://image.st-booklog.jp/ZmlaR2tlbFd4NC90MnBRWVBKRnk3QT09.jpg"},
