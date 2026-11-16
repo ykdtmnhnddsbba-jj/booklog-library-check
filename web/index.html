@@ -75,6 +75,19 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
 .notebtn{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;font-size:12px}
 .notebtn:hover{text-decoration:underline}
 .snip{font-size:12px;color:var(--text);opacity:.85;border-left:3px solid var(--accent);padding-left:8px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tag.mine{color:var(--blue);border-color:#1f5a78}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);padding:0;width:min(640px,94vw);max-height:88vh}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg{padding:16px 18px;display:flex;flex-direction:column;gap:10px;max-height:88vh;overflow:auto}
+.dlg h2{margin:0;font-size:17px;display:flex;justify-content:space-between;align-items:center}
+.dlg .srow{display:flex;gap:8px}
+.dlg input[type=search],.dlg input[type=text]{flex:1 1 auto;min-width:0;height:40px;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:0 10px;font:inherit}
+.dlg .hint{color:var(--sub);font-size:12px}
+.res{display:flex;gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px}
+.res .cover{flex:0 0 52px;width:52px;height:74px;font-size:18px}
+.res .body{gap:3px}.res h3{font-size:14px;margin:0;line-height:1.35}
+.res .acts{align-items:center}
+.res select{height:30px;font-size:12px}
 .foot{color:var(--sub);font-size:11px;margin-top:24px;line-height:1.7}
 [hidden]{display:none!important}
 @media(max-width:560px){.grid{grid-template-columns:1fr}.logo{font-size:17px}#refreshBtn{flex:1 1 100%}}
@@ -84,9 +97,25 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
 <header><div class="bar">
   <div class="logo">図書館<b>手帖</b></div>
   <nav><button data-tab="list" class="on">一覧</button><button data-tab="how">更新のしかた</button></nav>
-  <button class="btn sm" id="syncChip" type="button" title="感想をGoogleドライブに保存して、他の端末と共有します">☁ 感想の同期</button>
+  <button class="btn sm" id="syncChip" type="button" title="感想と、ここで追加した本をGoogleドライブに保存して、他の端末と共有します">☁ 感想の同期</button>
+  <button class="btn" id="addBtn" type="button" title="読みたい本を、ブクログに登録する前でもここに追加できます">＋ 本を追加</button>
   <button class="btn primary" id="refreshBtn" title="いまこの瞬間の貸出状況を取得し直します">貸出状況を最新に</button>
 </div></header>
+
+<dialog id="addDlg"><div class="dlg">
+  <h2><span>本を追加</span><button class="btn sm" id="addClose" type="button">閉じる</button></h2>
+  <form class="srow" id="addForm"><input type="search" id="addQ" placeholder="ISBN、または書名・著者" enterkeyhint="search" autocomplete="off"><button class="btn primary" type="submit">探す</button></form>
+  <div class="hint" id="addMsg">ISBN（978…の13桁、または10桁）を入れると確実です。書名でも探せます。</div>
+  <div id="addRes" style="display:flex;flex-direction:column;gap:8px"></div>
+  <details id="manual"><summary>見つからない・ISBNがない本を手入力で追加</summary>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+      <input type="text" id="mTitle" placeholder="書名（必須）">
+      <input type="text" id="mAuthor" placeholder="著者（任意）">
+      <input type="text" id="mIsbn" placeholder="ISBN（任意。あれば図書館を自動で調べます）" inputmode="numeric">
+      <button class="btn" id="mAdd" type="button">この内容で追加</button>
+    </div>
+  </details>
+</div></dialog>
 
 <main>
 <section id="tab-list">
@@ -110,6 +139,12 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
     <h2>貸出状況を今すぐ最新にしたい</h2>
     <p>画面右上の「貸出状況を最新に」を押すと、この瞬間の貸出状況を図書館のデータから取り直します（約1分）。初回だけ、カーリルのAPIキーの入力が必要です。キーはこの端末のブラウザにだけ保存されます。</p>
     <button class="btn sm" id="keyBtn" type="button">APIキーを設定・削除</button>
+  </div>
+
+  <div class="panel">
+    <h2>本を追加する（ブクログに登録する前でもOK）</h2>
+    <p>右上の「＋ 本を追加」から、ISBNか書名で本を探して追加できます。追加した本は「読みたい」として一覧に並び、図書館の所蔵・貸出状況もすぐ調べます（APIキーが必要です）。追加した本は、この端末のブラウザに保存されます。<b>「☁ 感想の同期」を済ませておくと、スマホとPCで共有されます。</b></p>
+    <p>ブクログには自動では登録されません。カードの「ブクログで登録 ↗」から登録できます。登録して本棚を書き出し直すと、同じ本は自動で「ブクログの本」に切り替わります。</p>
   </div>
 
   <div class="panel">
@@ -188,14 +223,15 @@ $('copyBtn').addEventListener('click',async()=>{try{await navigator.clipboard.wr
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
   $('tab-list').hidden=b.dataset.tab!=='list';$('tab-how').hidden=b.dataset.tab!=='how';
-  $('refreshBtn').hidden=b.dataset.tab!=='list';
+  $('refreshBtn').hidden=b.dataset.tab!=='list';$('addBtn').hidden=b.dataset.tab!=='list';
 }));
 
 // ---- data ----
 let DATA;
 try{const r=await fetch('data.json?t='+Date.now());if(!r.ok)throw new Error('HTTP '+r.status);DATA=await r.json()}
 catch(e){$('meta').textContent='データを読み込めませんでした（'+e.message+'）。GitHub Actionsの実行が完了しているか確認してください。';return}
-const books=DATA.books.map((b,i)=>({...b,idx:i,authors:arr(b.authors),avail:arr(b.avail).map(a=>({...a,libs:arr(a.libs)}))}));
+const baseBooks=DATA.books.map((b,i)=>({...b,idx:i,authors:arr(b.authors),avail:arr(b.avail).map(a=>({...a,libs:arr(a.libs)}))}));
+const books=[...baseBooks];
 const systems=arr(DATA.systems);
 const sysName=id=>{const s=systems.find(x=>x.id===id);return s?s.name:id};
 
@@ -224,6 +260,7 @@ function cover(b){
   if(b.image&&safeUrl(b.image)){
     const i=document.createElement('img');i.loading='lazy';i.alt=b.title;i.referrerPolicy='no-referrer';i.src=b.image;
     i.addEventListener('error',()=>{i.remove();c.textContent=initial});
+    i.addEventListener('load',()=>{if(i.naturalWidth<=1){i.remove();c.textContent=initial}});
     c.append(i);
   }else c.textContent=initial;
   return c;
@@ -356,11 +393,11 @@ async function driveSync(interactive){
     let changed=0;
     if(id){
       const r=await gFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
-      if(r.ok){const remote=await r.json();changed=mergeNotes(remote.notes||remote)}
+      if(r.ok){const remote=await r.json();changed=mergeNotes(remote.notes||remote)+mergeExtras(remote.extras)}
       else throw new Error('Drive読み込みに失敗 ('+r.status+')');
     }
-    try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES))}catch{}
-    const body=JSON.stringify({_readme:'図書館手帖の感想メモ。キーは本のASIN/ISBN。updatedの新しい方を採用。deleted:trueは削除済み。',exportedAt:new Date().toISOString(),notes:NOTES},null,1);
+    try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES));localStorage.setItem(EXKEY,JSON.stringify(EXTRAS))}catch{}
+    const body=JSON.stringify({_readme:'図書館手帖の感想メモ(notes)と、手帖で追加した本(extras)。updatedの新しい方を採用。deleted:trueは削除済み。',exportedAt:new Date().toISOString(),notes:NOTES,extras:EXTRAS},null,1);
     if(id){
       const r=await gFetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{'Content-Type':'application/json'},body});
       if(!r.ok)throw new Error('Drive保存に失敗 ('+r.status+')');
@@ -394,6 +431,150 @@ function gStartup(){
 window.addEventListener('pageshow',e=>{if(e.persisted){syncing=false;setSync('need')}});
 $('syncChip').addEventListener('click',()=>driveSync(true));
 
+// ---- ここで追加した本（ブクログ未登録）。端末に保存し、Googleドライブ同期にも載せる ----
+const EXKEY='bookExtras';let EXTRAS={};const EXAVAIL={};
+try{EXTRAS=JSON.parse(localStorage.getItem(EXKEY)||'{}')||{}}catch{EXTRAS={}}
+function isbnSum13(b12){let t=0;for(let i=0;i<12;i++)t+=(+b12[i])*(i%2?3:1);return (10-t%10)%10}
+function toIsbn13(x){
+  x=String(x||'').replace(/[-\s]/g,'').toUpperCase();
+  if(/^\d{13}$/.test(x))return (x.startsWith('978')||x.startsWith('979'))&&isbnSum13(x.slice(0,12))===+x[12]?x:'';
+  if(/^\d{9}[\dX]$/.test(x)){const b='978'+x.slice(0,9);return b+isbnSum13(b)}
+  return '';
+}
+function toIsbn10(x13){
+  if(!/^978\d{10}$/.test(x13||''))return '';
+  const b=x13.slice(3,12);let t=0;for(let i=0;i<9;i++)t+=(10-i)*(+b[i]);
+  const c=(11-t%11)%11;return b+(c===10?'X':String(c));
+}
+function saveExtras(){try{localStorage.setItem(EXKEY,JSON.stringify(EXTRAS));scheduleSync();return true}catch{return false}}
+function mergeExtras(inc){
+  let n=0;
+  for(const [k,v] of Object.entries(inc||{})){
+    if(!v||typeof v.title!=='string')continue;
+    const cur=EXTRAS[k];
+    if(!cur||(v.updated||'')>(cur.updated||'')){EXTRAS[k]=v;n++}
+  }
+  if(n)applyExtras();
+  return n;
+}
+// ブクログの本棚に同じISBNの本が出てきたら、追加分は隠す（ブクログ側を正とする）
+function applyExtras(){
+  books.length=baseBooks.length;
+  const shelfIsbn=new Set(baseBooks.map(b=>b.isbn).filter(Boolean));
+  const list=Object.values(EXTRAS).filter(e=>!e.deleted&&!(e.isbn&&shelfIsbn.has(e.isbn)))
+    .sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
+  list.forEach((e,i)=>{
+    const st=e.status||'1';
+    books.push({title:e.title,authors:arr(e.authors),isbn:e.isbn||'',asin:toIsbn10(e.isbn),image:e.image||'',status:st,hasIsbn:!!e.isbn,
+      avail:EXAVAIL[e.id]||[],extra:true,exId:e.id,idx:i-list.length});
+    if(!present.includes(st)){present.push(st);S.sts.add(st)}
+  });
+}
+async function checkExtras(only){
+  if(!_key)return false;
+  const targets=books.filter(b=>b.extra&&b.hasIsbn&&(only?only.includes(b.isbn):!b.avail.length));
+  const isbns=[...new Set(targets.map(b=>b.isbn))];
+  for(let i=0;i<isbns.length;i+=30){
+    const chunk=isbns.slice(i,i+30);
+    try{const res=await calilCheck(chunk);targets.forEach(b=>{if(chunk.includes(b.isbn)&&res[b.isbn]){b.avail=toAvail(res[b.isbn]);EXAVAIL[b.exId]=b.avail}})}
+    catch(e){console.warn(e);return false}
+  }
+  render();return true;
+}
+function addExtra({isbn,title,authors,image,status}){
+  const id=isbn||('t:'+title);const now=new Date().toISOString();
+  EXTRAS[id]={id,title,authors:arr(authors),isbn:isbn||'',image:image||'',status:status||'1',addedAt:now,updated:now};
+  const ok=saveExtras();applyExtras();render();return ok;
+}
+function removeExtra(id){
+  const e=EXTRAS[id];if(!e)return;
+  EXTRAS[id]={id,title:e.title,deleted:true,updated:new Date().toISOString()};
+  saveExtras();applyExtras();render();
+}
+// ---- 本の検索（Google Books → ISBNのときだけ openBD も） ----
+const httpsUrl=u=>u?String(u).replace(/^http:/,'https:').replace(/&edge=curl/,''):'';
+const amazonCover=i13=>{const i10=toIsbn10(i13);return i10?'https://m.media-amazon.com/images/P/'+i10+'.09.LZZZZZZZ.jpg':''};
+async function searchBooks(q){
+  const isbn=toIsbn13(q);const out=[];const seen=new Set();
+  const push=o=>{const k=o.isbn||('t:'+o.title);if(!o.title||seen.has(k))return;seen.add(k);out.push(o)};
+  try{
+    const u='https://www.googleapis.com/books/v1/volumes?maxResults=15&printType=books&langRestrict=ja&q='+encodeURIComponent(isbn?'isbn:'+isbn:q);
+    const r=await fetch(u);if(r.ok){
+      const j=await r.json();
+      for(const it of j.items||[]){
+        const v=it.volumeInfo||{};const ids=v.industryIdentifiers||[];
+        let i13=(ids.find(x=>x.type==='ISBN_13')||{}).identifier||'';
+        if(!i13){const i10=(ids.find(x=>x.type==='ISBN_10')||{}).identifier;if(i10)i13=toIsbn13(i10)}
+        i13=toIsbn13(i13);
+        push({isbn:i13,title:[v.title,v.subtitle].filter(Boolean).join(' '),authors:arr(v.authors),image:httpsUrl((v.imageLinks||{}).thumbnail||(v.imageLinks||{}).smallThumbnail)||amazonCover(i13)});
+      }
+    }
+  }catch(e){console.warn(e)}
+  if(isbn&&!out.some(o=>o.isbn===isbn)){
+    try{
+      const r=await fetch('https://api.openbd.jp/v1/get?isbn='+isbn);
+      if(r.ok){const j=await r.json();const sm=j&&j[0]&&j[0].summary;
+        if(sm&&sm.title)out.unshift({isbn,title:sm.title,authors:sm.author?[sm.author]:[],image:amazonCover(isbn)})}
+    }catch(e){console.warn(e)}
+  }
+  return {out,isbn};
+}
+function existing(isbn,title){
+  if(isbn){
+    const b=baseBooks.find(x=>x.isbn===isbn);if(b)return 'ブクログの本棚にあります（'+(STATUS_LABEL[b.status]||'')+'）';
+    const e=Object.values(EXTRAS).find(x=>!x.deleted&&x.isbn===isbn);if(e)return '追加済みです';
+  }else if(Object.values(EXTRAS).some(x=>!x.deleted&&!x.isbn&&x.title===title))return '追加済みです';
+  return '';
+}
+function resultRow(o){
+  const row=el('div','res');
+  row.append(cover({title:o.title,image:o.image,asin:''}));
+  const body=el('div','body');
+  body.append(el('h3',null,o.title),el('div','sub',(o.authors.join(' / ')||'著者情報なし')+(o.isbn?' ／ ISBN '+o.isbn:'')));
+  const acts=el('div','acts');const ex=existing(o.isbn,o.title);
+  if(ex)acts.append(el('span','tag',ex));
+  else{
+    const sel=document.createElement('select');[['1','読みたい'],['4','積読']].forEach(([v,t])=>{const op=el('option',null,t);op.value=v;sel.append(op)});
+    const add=el('button','btn sm primary','追加する');add.type='button';
+    add.addEventListener('click',async()=>{
+      const ok=addExtra({...o,status:sel.value});
+      acts.innerHTML='';acts.append(el('span','tag mine',ok?'追加しました':'追加しました（この端末に保存できませんでした）'));
+      if(o.isbn){
+        if(!_key){$('addMsg').textContent='図書館を調べるにはカーリルAPIキーが必要です。';if(!setKey())return}
+        $('addMsg').textContent='図書館を調べています…';
+        const done=await checkExtras([o.isbn]);
+        $('addMsg').textContent=done?'追加して、図書館の状況も取得しました。続けて追加できます。':'追加しました。図書館の状況は「貸出状況を最新に」で取得できます。';
+      }
+    });
+    acts.append(sel,add);
+  }
+  body.append(acts);row.append(body);return row;
+}
+const dlg=$('addDlg');
+$('addBtn').addEventListener('click',()=>{dlg.showModal();$('addQ').focus()});
+$('addClose').addEventListener('click',()=>dlg.close());
+dlg.addEventListener('click',e=>{if(e.target===dlg)dlg.close()});
+$('addForm').addEventListener('submit',async e=>{
+  e.preventDefault();const q=$('addQ').value.trim();if(!q)return;
+  const box=$('addRes');box.innerHTML='';$('addMsg').textContent='探しています…';
+  const {out,isbn}=await searchBooks(q);
+  if(!out.length){
+    $('addMsg').textContent='見つかりませんでした。下の「手入力で追加」から書名を入れて追加できます。';
+    if(isbn)$('mIsbn').value=isbn;else $('mTitle').value=q;
+    $('manual').open=true;return;
+  }
+  $('addMsg').textContent=out.length+'件見つかりました。';out.forEach(o=>box.append(resultRow(o)));
+});
+$('mAdd').addEventListener('click',async()=>{
+  const title=$('mTitle').value.trim();if(!title){$('mTitle').focus();return}
+  const raw=$('mIsbn').value.trim();const isbn=raw?toIsbn13(raw):'';
+  if(raw&&!isbn){alert('ISBNが正しくないようです（13桁か10桁の数字）。空欄でも追加できます。');return}
+  const ex=existing(isbn,title);if(ex){$('addMsg').textContent=title+'：'+ex;return}
+  addExtra({isbn,title,authors:$('mAuthor').value.trim()?[$('mAuthor').value.trim()]:[],image:isbn?amazonCover(isbn):'',status:'1'});
+  $('mTitle').value=$('mAuthor').value=$('mIsbn').value='';$('addMsg').textContent='「'+title+'」を追加しました。';
+  if(isbn){if(!_key&&!setKey())return;checkExtras([isbn])}
+});
+
 function card(b,kind){
   const a=el('article','card k-'+kind);
   const body=el('div','body');
@@ -401,6 +582,7 @@ function card(b,kind){
   h.append(href?link(b.title,href):document.createTextNode(b.title));
   body.append(h,el('div','sub',b.authors.join(' / ')||'著者情報なし'));
   const tags=el('div','tags');tags.append(el('span','tag',STATUS_LABEL[b.status]||b.status));
+  if(b.extra)tags.append(el('span','tag mine','ブクログ未登録'));
   if(b.stale)tags.append(el('span','tag warn','前回の結果'));
   body.append(tags);
   if(b.hasIsbn){
@@ -425,6 +607,12 @@ function card(b,kind){
   const acts=el('div','acts');
   if(b.hasIsbn)acts.append(link('カーリルで見る ↗','https://calil.jp/book/'+b.isbn));
   else acts.append(link('カーリルで書名検索 ↗','https://calil.jp/search?q='+encodeURIComponent(b.title)));
+  if(b.extra){
+    acts.append(link('ブクログで登録 ↗',b.asin?'https://booklog.jp/item/1/'+encodeURIComponent(b.asin):'https://booklog.jp/search?keyword='+encodeURIComponent(b.title)));
+    const rm=el('button','notebtn','一覧から外す');rm.type='button';
+    rm.addEventListener('click',()=>{if(confirm('「'+b.title+'」を一覧から外しますか？'))removeExtra(b.exId)});
+    acts.append(rm);
+  }
   body.append(acts);
   body.append(noteArea(b));
   a.append(cover(b),body);
@@ -452,7 +640,7 @@ function render(){
   const list=$('list');list.innerHTML='';
   if(!rows.length)list.append(Object.assign(el('div','empty','該当する本はありません。'),{style:'grid-column:1/-1'}));
   rows.forEach(x=>list.append(card(x.b,x.k)));
-  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）から '+books.length+'冊を確認 ／ 貸出状況: '+fmt(DATA.generated)+' 取得 ／ 本棚: '+fmt(DATA.shelfExported)+' 書き出し';
+  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）から '+baseBooks.length+'冊を確認 ／ 貸出状況: '+fmt(DATA.generated)+' 取得 ／ 本棚: '+fmt(DATA.shelfExported)+' 書き出し'+(books.length>baseBooks.length?' ／ 手帖で追加 '+(books.length-baseBooks.length)+'冊':'');
 }
 $('noteExport').addEventListener('click',exportNotes);
 $('noteImport').addEventListener('change',e=>{if(e.target.files[0])importNotes(e.target.files[0]);e.target.value=''});
@@ -505,8 +693,10 @@ $('refreshBtn').addEventListener('click',async()=>{
   $('status').textContent=(failed?failed+'冊は更新できませんでした。':'')+n.getHours()+':'+String(n.getMinutes()).padStart(2,'0')+' に最新にしました。';
   btn.disabled=false;
 });
+applyExtras();
 render();
 gStartup();
+checkExtras();
 })();
 </script>
 </body>
