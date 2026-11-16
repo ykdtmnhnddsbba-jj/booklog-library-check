@@ -84,6 +84,7 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
 <header><div class="bar">
   <div class="logo">図書館<b>手帖</b></div>
   <nav><button data-tab="list" class="on">一覧</button><button data-tab="how">更新のしかた</button></nav>
+  <button class="btn sm" id="syncChip" type="button" title="感想をGoogleドライブに保存して、他の端末と共有します">☁ 感想の同期</button>
   <button class="btn primary" id="refreshBtn" title="いまこの瞬間の貸出状況を取得し直します">貸出状況を最新に</button>
 </div></header>
 
@@ -140,7 +141,8 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
   </div>
   <div class="panel">
     <h2>感想メモのバックアップ</h2>
-    <p>各本の「📝 感想を書く」で書いた内容は、<b>この端末のブラウザにだけ</b>保存されます（サイトの公開データには載りません）。機種変更やブラウザのデータ削除に備えて、ときどき書き出しておくと安心です。端末間の引き継ぎにも使えます。</p>
+    <p>感想は、まずこの端末のブラウザに保存され、サイトの公開データには載りません。画面上部の<b>「☁ 感想の同期」</b>を押してGoogleにログインすると、自分のGoogleドライブ（<code>booklog-notes.json</code>）にも保存され、スマホとPCで同じ感想が見られます。同期後は、書くたびに自動で保存されます。テスト運用のため、約7日ごとに「要再接続」が出たらもう一度押してください。</p>
+    <p>念のため、ファイルでの書き出し・読み込みも使えます。</p>
     <button class="btn sm" id="noteExport" type="button">感想を書き出す</button>
     <label class="btn sm" style="cursor:pointer">感想を読み込む<input type="file" id="noteImport" accept="application/json,.json" hidden></label>
   </div>
@@ -230,7 +232,7 @@ function cover(b){
 const NOTEKEY='bookNotes';let NOTES={};const noteOpen=new Set();
 try{NOTES=JSON.parse(localStorage.getItem(NOTEKEY)||'{}')||{}}catch{NOTES={}}
 const noteId=b=>b.asin||b.isbn||b.title;
-function saveNotes(){try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES));return true}catch{return false}}
+function saveNotes(){try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES));scheduleSync();return true}catch{return false}}
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let activeRec=null;
 function noteBox(b,onChange){
@@ -242,7 +244,7 @@ function noteBox(b,onChange){
   const refreshInfo=()=>{const n=NOTES[id];info.textContent=n&&n.text?('保存済み '+ta.value.length+'文字 ／ '+fmt(n.updated)):'未保存'};
   const commit=()=>{
     const t=ta.value;
-    if(t.trim()){NOTES[id]={text:t,updated:new Date().toISOString(),title:b.title}}else delete NOTES[id];
+    if(t.trim()){NOTES[id]={text:t,updated:new Date().toISOString(),title:b.title}}else if(NOTES[id]&&NOTES[id].text){NOTES[id]={text:'',deleted:true,updated:new Date().toISOString(),title:b.title}}
     if(!saveNotes())info.textContent='保存できませんでした（ブラウザの保存が無効です）';else refreshInfo();
     onChange&&onChange();
   };
@@ -290,16 +292,108 @@ function exportNotes(){
 function importNotes(file){
   const r=new FileReader();r.onload=()=>{
     try{
-      const j=JSON.parse(r.result);const inc=j.notes||j;let add=0,upd=0;
-      for(const [k,v] of Object.entries(inc)){
-        if(!v||typeof v.text!=='string')continue;
-        const cur=NOTES[k];
-        if(!cur){NOTES[k]=v;add++}else if((v.updated||'')>(cur.updated||'')){NOTES[k]=v;upd++}
-      }
-      saveNotes();render();alert('読み込みました：追加'+add+'件、更新'+upd+'件');
+      const j=JSON.parse(r.result);const n=mergeNotes(j.notes||j);
+      saveNotes();render();alert('読み込みました：'+n+'件を取り込みました');
     }catch{alert('読み込めませんでした。書き出したファイル(book-notes.json)を選んでください。')}
   };r.readAsText(file);
 }
+// ---- Googleドライブ同期（感想のみ。drive.file：このアプリが作ったファイルだけに触れる） ----
+const G_CLIENT_ID='568813131190-9pb3hf0f3g3rbiglkq4nbk88g4eltk9p.apps.googleusercontent.com';
+const DRIVE_NAME='booklog-notes.json',G_SCOPE='https://www.googleapis.com/auth/drive.file';
+const G_REDIR=location.origin+location.pathname.replace(/index\.html$/,'');
+const G_TOKKEY='gauth_tok:'+G_REDIR,LINKKEY='bookNotesDriveLinked';
+let gToken=null,gExp=0,driveFileId=null,syncing=false,syncTimer=null,linked=false;
+try{linked=localStorage.getItem(LINKKEY)==='1'}catch{}
+function mergeNotes(inc){
+  let n=0;
+  for(const [k,v] of Object.entries(inc||{})){
+    if(!v||typeof v.text!=='string')continue;
+    const cur=NOTES[k];
+    if(!cur||(v.updated||'')>(cur.updated||'')){NOTES[k]=v;n++}
+  }
+  return n;
+}
+(function(){
+  try{
+    if(/access_token=|error=/.test(location.hash)){
+      const p=new URLSearchParams(location.hash.slice(1));
+      if(p.get('state')&&p.get('state')===sessionStorage.getItem('gauth_state')){
+        if(p.get('access_token'))sessionStorage.setItem(G_TOKKEY,JSON.stringify({t:p.get('access_token'),e:Date.now()+(+p.get('expires_in')||3600)*1000}));
+        sessionStorage.removeItem('gauth_state');
+        history.replaceState(null,'',location.pathname+location.search);
+      }
+    }
+    const t=JSON.parse(sessionStorage.getItem(G_TOKKEY)||'null');
+    if(t&&t.e>Date.now()){gToken=t.t;gExp=t.e}
+  }catch{}
+})();
+function gRedirect(prompt){
+  const st=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  try{sessionStorage.setItem('gauth_state',st)}catch{}
+  const q=new URLSearchParams({client_id:G_CLIENT_ID,redirect_uri:G_REDIR,response_type:'token',scope:G_SCOPE,state:st,include_granted_scopes:'true'});
+  if(prompt)q.set('prompt',prompt);
+  location.href='https://accounts.google.com/o/oauth2/v2/auth?'+q.toString();
+  return new Promise(()=>{});
+}
+function setSync(st){
+  const c=$('syncChip');
+  const m={off:'☁ 感想の同期',need:'☁ 要再接続',ok:'☁ 同期済み',dirty:'☁ 未同期…',busy:'☁ 同期中…',bad:'☁ 同期エラー'};
+  c.textContent=m[st]||m.off;c.dataset.state=st;
+  c.style.borderColor=st==='ok'?'var(--accent)':(st==='bad'||st==='need')?'var(--pink)':'';
+}
+const gFetch=(url,opt={})=>fetch(url,{...opt,headers:{...(opt.headers||{}),Authorization:'Bearer '+gToken}});
+async function driveSync(interactive){
+  if(syncing)return;syncing=true;setSync('busy');
+  try{
+    if(!gToken||Date.now()>gExp-60000){if(interactive)await gRedirect('');throw new Error('再接続が必要です')}
+    let id=driveFileId;
+    if(!id){
+      const q=encodeURIComponent("name='"+DRIVE_NAME+"' and trashed=false");
+      const r=await gFetch('https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id)&orderBy='+encodeURIComponent('modifiedTime desc')+'&pageSize=1');
+      if(!r.ok)throw new Error('Drive検索に失敗 ('+r.status+')');
+      const j=await r.json();id=j.files&&j.files[0]&&j.files[0].id;
+    }
+    let changed=0;
+    if(id){
+      const r=await gFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
+      if(r.ok){const remote=await r.json();changed=mergeNotes(remote.notes||remote)}
+      else throw new Error('Drive読み込みに失敗 ('+r.status+')');
+    }
+    try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES))}catch{}
+    const body=JSON.stringify({_readme:'図書館手帖の感想メモ。キーは本のASIN/ISBN。updatedの新しい方を採用。deleted:trueは削除済み。',exportedAt:new Date().toISOString(),notes:NOTES},null,1);
+    if(id){
+      const r=await gFetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{'Content-Type':'application/json'},body});
+      if(!r.ok)throw new Error('Drive保存に失敗 ('+r.status+')');
+    }else{
+      const b='booknotes'+Date.now();
+      const mp='--'+b+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify({name:DRIVE_NAME,mimeType:'application/json'})+'\r\n--'+b+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+body+'\r\n--'+b+'--';
+      const r=await gFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+b},body:mp});
+      if(!r.ok)throw new Error('Drive作成に失敗 ('+r.status+')');
+      id=(await r.json()).id;
+    }
+    driveFileId=id;linked=true;try{localStorage.setItem(LINKKEY,'1')}catch{}
+    setSync('ok');
+    if(changed&&!(document.activeElement&&document.activeElement.tagName==='TEXTAREA'))render();
+    return true;
+  }catch(e){setSync(interactive?'bad':'need');if(interactive)alert(e.message);console.warn(e);return false}
+  finally{syncing=false}
+}
+function scheduleSync(){
+  if(!linked)return;
+  setSync('dirty');clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>{if(gToken&&Date.now()<gExp-60000)driveSync(false);else setSync('need')},2500);
+}
+function gStartup(){
+  if(gToken){driveSync(false);return}
+  if(!linked){setSync('off');return}
+  let last=0;try{last=+sessionStorage.getItem('gauth_silent')||0}catch{}
+  if(Date.now()-last<300000){setSync('need');return}
+  try{sessionStorage.setItem('gauth_silent',String(Date.now()))}catch{}
+  gRedirect('none');
+}
+window.addEventListener('pageshow',e=>{if(e.persisted){syncing=false;setSync('need')}});
+$('syncChip').addEventListener('click',()=>driveSync(true));
+
 function card(b,kind){
   const a=el('article','card k-'+kind);
   const body=el('div','body');
@@ -412,6 +506,7 @@ $('refreshBtn').addEventListener('click',async()=>{
   btn.disabled=false;
 });
 render();
+gStartup();
 })();
 </script>
 </body>
