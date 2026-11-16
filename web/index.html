@@ -137,7 +137,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 <section id="tab-how" hidden>
   <div class="panel">
     <h2>貸出状況を今すぐ最新にしたい</h2>
-    <p>画面右上の「貸出状況を最新に」を押すと、この瞬間の貸出状況を図書館のデータから取り直します（約1分）。初回だけ、カーリルのAPIキーの入力が必要です。キーはこの端末のブラウザにだけ保存されます。</p>
+    <p>画面右上の「貸出状況を最新に」を押すと、この瞬間の貸出状況を図書館のデータから取り直します（約1分）。初回だけ、カーリルのAPIキーの入力が必要です。キーはこの端末のブラウザに保存されます。「☁ 感想の同期」を済ませていれば、自分のGoogleドライブにも保存され、他の端末では入力不要になります（公開ページやGitHubには載りません）。</p>
     <button class="btn sm" id="keyBtn" type="button">APIキーを設定・削除</button>
   </div>
 
@@ -390,14 +390,15 @@ async function driveSync(interactive){
       if(!r.ok)throw new Error('Drive検索に失敗 ('+r.status+')');
       const j=await r.json();id=j.files&&j.files[0]&&j.files[0].id;
     }
-    let changed=0;
+    let changed=0,gotKey=false;
     if(id){
       const r=await gFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
-      if(r.ok){const remote=await r.json();changed=mergeNotes(remote.notes||remote)+mergeExtras(remote.extras)}
+      if(r.ok){const remote=await r.json();changed=mergeNotes(remote.notes||remote)+mergeExtras(remote.extras);
+        if(typeof remote.calilKey==='string'&&remote.calilKey&&!_key){_key=remote.calilKey;try{localStorage.setItem(KEYNAME,_key)}catch{}gotKey=true}}
       else throw new Error('Drive読み込みに失敗 ('+r.status+')');
     }
     try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES));localStorage.setItem(EXKEY,JSON.stringify(EXTRAS))}catch{}
-    const body=JSON.stringify({_readme:'図書館手帖の感想メモ(notes)と、手帖で追加した本(extras)。updatedの新しい方を採用。deleted:trueは削除済み。',exportedAt:new Date().toISOString(),notes:NOTES,extras:EXTRAS},null,1);
+    const body=JSON.stringify({_readme:'図書館手帖の感想メモ(notes)と、手帖で追加した本(extras)、カーリルAPIキー(calilKey・他人に見せないこと)。updatedの新しい方を採用。deleted:trueは削除済み。',exportedAt:new Date().toISOString(),notes:NOTES,extras:EXTRAS,calilKey:_key},null,1);
     if(id){
       const r=await gFetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{'Content-Type':'application/json'},body});
       if(!r.ok)throw new Error('Drive保存に失敗 ('+r.status+')');
@@ -410,6 +411,7 @@ async function driveSync(interactive){
     }
     driveFileId=id;linked=true;try{localStorage.setItem(LINKKEY,'1')}catch{}
     setSync('ok');
+    if(gotKey){$('keyBtn').textContent='APIキーを保存済み（変更・削除）';checkExtras()}
     if(changed&&!(document.activeElement&&document.activeElement.tagName==='TEXTAREA'))render();
     return true;
   }catch(e){setSync(interactive?'bad':'need');if(interactive)alert(e.message);console.warn(e);return false}
@@ -654,6 +656,7 @@ function setKey(){
   const v=prompt('カーリルAPIキーを入力してください。この端末のブラウザにだけ保存されます（空欄で削除）。',_key);
   if(v===null)return false;
   _key=v.trim();try{_key?localStorage.setItem(KEYNAME,_key):localStorage.removeItem(KEYNAME)}catch{}
+  if(_key)scheduleSync();
   return !!_key;
 }
 function jsonp(url,timeout=25000){
