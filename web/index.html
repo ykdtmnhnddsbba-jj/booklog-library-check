@@ -289,21 +289,45 @@ function noteBox(b,onChange){
   ta.addEventListener('blur',()=>{clearTimeout(timer);commit()});
   if(!SR){mic.disabled=true;mic.title='このブラウザは音声入力に対応していません（Chrome・Edge・Safari推奨）'}
   else{
-    let rec=null;
-    const stop=()=>{if(rec){try{rec.stop()}catch{}}};
-    mic.addEventListener('click',()=>{
-      if(rec){stop();return}
-      if(activeRec)activeRec.stop();
-      rec=new SR();rec.lang='ja-JP';rec.continuous=true;rec.interimResults=true;activeRec=rec;
-      const base=ta.value;const sep=base&&!/\s$/.test(base)?'\n':'';let fin='';
-      rec.onresult=e=>{
-        let interim='';
-        for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)fin+=r[0].transcript;else interim+=r[0].transcript}
+    // 「停止」を押すまで、ブラウザが勝手に止めても自動で聞き取りを再開し続ける
+    let rec=null,want=false,fast=0,startedAt=0,wl=null,handle=null;
+    const lockOn=async()=>{try{if(navigator.wakeLock&&!wl){wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>{wl=null})}}catch{}};
+    const lockOff=()=>{try{wl&&wl.release()}catch{}wl=null};
+    const onVis=()=>{if(want&&document.visibilityState==='visible')lockOn()};
+    const ui=on=>{mic.classList.toggle('rec',on);mic.textContent=on?'⏹ 停止（話してください）':'🎤 音声入力'};
+    const finish=()=>{want=false;ui(false);lockOff();document.removeEventListener('visibilitychange',onVis);if(activeRec===handle)activeRec=null;rec=null;commit()};
+    const begin=()=>{
+      const r=new SR();rec=r;r.lang='ja-JP';r.continuous=true;r.interimResults=true;
+      const base=ta.value;const sep=base&&!/\s$/.test(base)?'\n':'';let fin='';startedAt=Date.now();
+      r.onresult=e=>{
+        fast=0;let interim='';
+        for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)fin+=x[0].transcript;else interim+=x[0].transcript}
         ta.value=base+sep+fin+interim;clearTimeout(timer);timer=setTimeout(commit,600);
+        ta.scrollTop=ta.scrollHeight;info.textContent='聞き取り中…（停止を押すまで続きます）';
       };
-      rec.onerror=e=>{info.textContent=e.error==='not-allowed'||e.error==='service-not-allowed'?'マイクが許可されていません（ブラウザの設定でマイクを許可してください）':e.error==='no-speech'?'音声が聞き取れませんでした':'音声入力エラー: '+e.error};
-      rec.onend=()=>{mic.classList.remove('rec');mic.textContent='🎤 音声入力';if(activeRec===rec)activeRec=null;rec=null;ta.value=ta.value.trim()===''?'':ta.value;commit()};
-      try{rec.start();mic.classList.add('rec');mic.textContent='⏹ 停止（話してください）';info.textContent='聞き取り中…'}catch{rec=null}
+      r.onerror=e=>{
+        if(e.error==='not-allowed'||e.error==='service-not-allowed'){want=false;info.textContent='マイクが許可されていません（ブラウザの設定でマイクを許可してください）'}
+        else if(e.error==='no-speech'||e.error==='aborted'){/* 無音で止まっただけ。onendで再開 */}
+        else info.textContent='音声入力エラー: '+e.error+'（再接続します）';
+      };
+      r.onend=()=>{
+        if(rec!==r)return;
+        ta.value=ta.value.trim()===''?'':ta.value;commit();
+        if(!want){finish();return}
+        // すぐ終わる状態が続くときは諦める（無限ループ防止）
+        fast=Date.now()-startedAt<1500?fast+1:0;
+        if(fast>=6){info.textContent='音声入力が続けられませんでした。もう一度押してください。';finish();return}
+        setTimeout(()=>{if(want)try{begin()}catch{finish()}},fast?600:150);
+      };
+      r.start();
+    };
+    handle={stop:()=>{want=false;try{rec&&rec.stop()}catch{}}};
+    mic.addEventListener('click',()=>{
+      if(want){handle.stop();return}
+      if(activeRec)activeRec.stop();
+      want=true;fast=0;activeRec=handle;ui(true);info.textContent='聞き取り中…（停止を押すまで続きます）';
+      lockOn();document.addEventListener('visibilitychange',onVis);
+      try{begin()}catch{finish()}
     });
   }
   refreshInfo();row.append(mic,info);box.append(ta,row);
