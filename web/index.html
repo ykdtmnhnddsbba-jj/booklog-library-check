@@ -67,6 +67,14 @@ a.pill.go{text-decoration:none;cursor:pointer}a.pill.go:hover{filter:brightness(
 .bm{display:inline-block;background:var(--panel2);border:1px dashed var(--accent);color:var(--accent);border-radius:10px;padding:8px 14px;font-weight:800;text-decoration:none;cursor:grab}
 textarea{width:100%;height:150px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px;font:12px/1.5 monospace}
 details summary{cursor:pointer;color:var(--sub);margin:6px 0}
+.note{margin-top:6px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.note textarea{height:110px;font:14px/1.6 system-ui,sans-serif;resize:vertical}
+.note .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--sub)}
+.note .mic.rec{background:var(--pink);color:#fff;border-color:var(--pink);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.6}}
+.notebtn{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;font-size:12px}
+.notebtn:hover{text-decoration:underline}
+.snip{font-size:12px;color:var(--text);opacity:.85;border-left:3px solid var(--accent);padding-left:8px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .foot{color:var(--sub);font-size:11px;margin-top:24px;line-height:1.7}
 [hidden]{display:none!important}
 @media(max-width:560px){.grid{grid-template-columns:1fr}.logo{font-size:17px}#refreshBtn{flex:1 1 100%}}
@@ -84,7 +92,7 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
   <div class="meta" id="meta">読み込み中…</div>
   <div class="seg" id="seg"></div>
   <div class="filters">
-    <input type="search" id="q" placeholder="書名・著者で検索">
+    <input type="search" id="q" placeholder="書名・著者・感想で検索">
     <select id="sort">
       <option value="kind">並び: 貸出可が先</option>
       <option value="new">並び: 登録が新しい順</option>
@@ -130,6 +138,13 @@ details summary{cursor:pointer;color:var(--sub);margin:6px 0}
       <textarea id="bmCode" readonly></textarea>
     </details>
   </div>
+  <div class="panel">
+    <h2>感想メモのバックアップ</h2>
+    <p>各本の「📝 感想を書く」で書いた内容は、<b>この端末のブラウザにだけ</b>保存されます（サイトの公開データには載りません）。機種変更やブラウザのデータ削除に備えて、ときどき書き出しておくと安心です。端末間の引き継ぎにも使えます。</p>
+    <button class="btn sm" id="noteExport" type="button">感想を書き出す</button>
+    <label class="btn sm" style="cursor:pointer">感想を読み込む<input type="file" id="noteImport" accept="application/json,.json" hidden></label>
+  </div>
+
   <p class="meta">貸出状況は1日1回、自動で更新されます。</p>
 </section>
 
@@ -211,6 +226,80 @@ function cover(b){
   }else c.textContent=initial;
   return c;
 }
+// ---- 感想メモ（この端末のブラウザに保存。音声入力対応） ----
+const NOTEKEY='bookNotes';let NOTES={};const noteOpen=new Set();
+try{NOTES=JSON.parse(localStorage.getItem(NOTEKEY)||'{}')||{}}catch{NOTES={}}
+const noteId=b=>b.asin||b.isbn||b.title;
+function saveNotes(){try{localStorage.setItem(NOTEKEY,JSON.stringify(NOTES));return true}catch{return false}}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let activeRec=null;
+function noteBox(b,onChange){
+  const id=noteId(b);const box=el('div','note');
+  const ta=document.createElement('textarea');ta.placeholder='この本の感想を書く（マイクで話して入力もできます）';ta.value=(NOTES[id]&&NOTES[id].text)||'';
+  const row=el('div','row');const info=el('span',null,'');
+  const mic=el('button','btn sm mic','🎤 音声入力');mic.type='button';
+  let timer=null;
+  const refreshInfo=()=>{const n=NOTES[id];info.textContent=n&&n.text?('保存済み '+ta.value.length+'文字 ／ '+fmt(n.updated)):'未保存'};
+  const commit=()=>{
+    const t=ta.value;
+    if(t.trim()){NOTES[id]={text:t,updated:new Date().toISOString(),title:b.title}}else delete NOTES[id];
+    if(!saveNotes())info.textContent='保存できませんでした（ブラウザの保存が無効です）';else refreshInfo();
+    onChange&&onChange();
+  };
+  ta.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(commit,600)});
+  ta.addEventListener('blur',()=>{clearTimeout(timer);commit()});
+  if(!SR){mic.disabled=true;mic.title='このブラウザは音声入力に対応していません（Chrome・Edge・Safari推奨）'}
+  else{
+    let rec=null;
+    const stop=()=>{if(rec){try{rec.stop()}catch{}}};
+    mic.addEventListener('click',()=>{
+      if(rec){stop();return}
+      if(activeRec)activeRec.stop();
+      rec=new SR();rec.lang='ja-JP';rec.continuous=true;rec.interimResults=true;activeRec=rec;
+      const base=ta.value;const sep=base&&!/\s$/.test(base)?'\n':'';let fin='';
+      rec.onresult=e=>{
+        let interim='';
+        for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)fin+=r[0].transcript;else interim+=r[0].transcript}
+        ta.value=base+sep+fin+interim;clearTimeout(timer);timer=setTimeout(commit,600);
+      };
+      rec.onerror=e=>{info.textContent=e.error==='not-allowed'||e.error==='service-not-allowed'?'マイクが許可されていません（ブラウザの設定でマイクを許可してください）':e.error==='no-speech'?'音声が聞き取れませんでした':'音声入力エラー: '+e.error};
+      rec.onend=()=>{mic.classList.remove('rec');mic.textContent='🎤 音声入力';if(activeRec===rec)activeRec=null;rec=null;ta.value=ta.value.trim()===''?'':ta.value;commit()};
+      try{rec.start();mic.classList.add('rec');mic.textContent='⏹ 停止（話してください）';info.textContent='聞き取り中…'}catch{rec=null}
+    });
+  }
+  refreshInfo();row.append(mic,info);box.append(ta,row);
+  return box;
+}
+function noteArea(b){
+  const wrap=el('div');const id=noteId(b);
+  const draw=()=>{
+    wrap.innerHTML='';const n=NOTES[id];
+    const open=noteOpen.has(id);
+    if(n&&n.text&&!open)wrap.append(el('div','snip',n.text));
+    const t=el('button','notebtn',open?'▲ 感想を閉じる':(n&&n.text?'📝 感想を編集':'📝 感想を書く'));t.type='button';
+    t.addEventListener('click',()=>{open?noteOpen.delete(id):noteOpen.add(id);draw()});
+    wrap.append(t);
+    if(open)wrap.append(noteBox(b));
+  };
+  draw();return wrap;
+}
+function exportNotes(){
+  const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),notes:NOTES},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='book-notes.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function importNotes(file){
+  const r=new FileReader();r.onload=()=>{
+    try{
+      const j=JSON.parse(r.result);const inc=j.notes||j;let add=0,upd=0;
+      for(const [k,v] of Object.entries(inc)){
+        if(!v||typeof v.text!=='string')continue;
+        const cur=NOTES[k];
+        if(!cur){NOTES[k]=v;add++}else if((v.updated||'')>(cur.updated||'')){NOTES[k]=v;upd++}
+      }
+      saveNotes();render();alert('読み込みました：追加'+add+'件、更新'+upd+'件');
+    }catch{alert('読み込めませんでした。書き出したファイル(book-notes.json)を選んでください。')}
+  };r.readAsText(file);
+}
 function card(b,kind){
   const a=el('article','card k-'+kind);
   const body=el('div','body');
@@ -243,6 +332,7 @@ function card(b,kind){
   if(b.hasIsbn)acts.append(link('カーリルで見る ↗','https://calil.jp/book/'+b.isbn));
   else acts.append(link('カーリルで書名検索 ↗','https://calil.jp/search?q='+encodeURIComponent(b.title)));
   body.append(acts);
+  body.append(noteArea(b));
   a.append(cover(b),body);
   return a;
 }
@@ -250,7 +340,7 @@ function chip(text,count,on,fn){const c=el('button','chip'+(on?' on':''),text);c
 
 function render(){
   const q=S.q.trim().toLowerCase();
-  const base=books.filter(b=>S.sts.has(b.status)&&(!q||(b.title+' '+b.authors.join(' ')).toLowerCase().includes(q)));
+  const base=books.filter(b=>S.sts.has(b.status)&&(!q||(b.title+' '+b.authors.join(' ')+' '+((NOTES[noteId(b)]||{}).text||'')).toLowerCase().includes(q)));
   const withKind=base.map(b=>({b,k:kindOf(b)}));
   const cnt=k=>withKind.filter(x=>x.k===k).length;
   const segs=[['owned','所蔵あり',cnt('avail')+cnt('held')],['avail','貸出可',cnt('avail')],['held','貸出中・館内のみ',cnt('held')],['none','蔵書なし',cnt('none')+cnt('error')],['noisbn','ISBNなし',cnt('noisbn')],['all','すべて',withKind.length]];
@@ -270,6 +360,8 @@ function render(){
   rows.forEach(x=>list.append(card(x.b,x.k)));
   $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）から '+books.length+'冊を確認 ／ 貸出状況: '+fmt(DATA.generated)+' 取得 ／ 本棚: '+fmt(DATA.shelfExported)+' 書き出し';
 }
+$('noteExport').addEventListener('click',exportNotes);
+$('noteImport').addEventListener('change',e=>{if(e.target.files[0])importNotes(e.target.files[0]);e.target.value=''});
 $('q').addEventListener('input',e=>{S.q=e.target.value;render()});
 $('sort').addEventListener('change',e=>{S.sort=e.target.value;render()});
 
