@@ -201,14 +201,14 @@ const safeUrl=u=>/^https?:\/\//i.test(u||'')?u:null;
 const arr=x=>Array.isArray(x)?x:(x==null||x===''?[]:[x]);
 
 // ---- tabs / how-to (usable even before data loads) ----
-const BOOKMARKLET=String.raw`(async()=>{const m=location.pathname.match(/^\/users\/([^\/]+)/);if(location.hostname!=='booklog.jp'||!m){alert('ブクログの本棚ページ（booklog.jp/users/…）を開いてから押してください');return;}const user=m[1];const dec=s=>{const t=document.createElement('textarea');t.innerHTML=s;return t.value;};const all=[],seen=new Set();for(let p=1;p<=80;p++){const h=await(await fetch('/users/'+user+'?page='+p,{credentials:'omit'})).text();let added=0;for(const x of h.matchAll(/data-book='([^']*)'/g)){let o;try{o=JSON.parse(dec(x[1]));}catch(e){continue;}if(!o||!o.book_id||seen.has(String(o.book_id)))continue;seen.add(String(o.book_id));added++;const it=o.item||{};all.push({bookId:String(o.book_id),status:o.status?String(o.status):'0',title:o.title||'',authors:Array.isArray(it.authors)?it.authors:[],ean:String(it.EAN||''),asin:String(o.id||it.id||''),image:String(o.image||it.medium_image_url||'')});}if(!added)break;await new Promise(r=>setTimeout(r,500));}const counts={};all.forEach(b=>{counts[b.status]=(counts[b.status]||0)+1;});const shelf={user:user,fetchedAt:new Date().toISOString(),total:all.length,counts:counts,books:all.filter(b=>b.status!=='3')};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(shelf)],{type:'application/json'}));a.download='shelf.json';document.body.append(a);a.click();a.remove();alert('shelf.json を保存しました（'+shelf.books.length+'冊 / 全'+all.length+'冊）。');})()`;
+const BOOKMARKLET=String.raw`(async()=>{const m=location.pathname.match(/^\/users\/([^\/]+)/);if(location.hostname!=='booklog.jp'||!m){alert('ブクログの本棚ページ（booklog.jp/users/…）を開いてから押してください');return;}const user=m[1];const dec=s=>{const t=document.createElement('textarea');t.innerHTML=s;return t.value;};const all=[],seen=new Set();for(let p=1;p<=80;p++){const h=await(await fetch('/users/'+user+'?page='+p,{credentials:'omit'})).text();let added=0;for(const x of h.matchAll(/data-book='([^']*)'/g)){let o;try{o=JSON.parse(dec(x[1]));}catch(e){continue;}if(!o||!o.book_id||seen.has(String(o.book_id)))continue;seen.add(String(o.book_id));added++;const it=o.item||{};all.push({bookId:String(o.book_id),status:o.status?String(o.status):'0',title:o.title||'',authors:Array.isArray(it.authors)?it.authors:[],ean:String(it.EAN||''),asin:String(o.id||it.id||''),image:String(o.image||it.medium_image_url||'')});}if(!added)break;await new Promise(r=>setTimeout(r,500));}const counts={};all.forEach(b=>{counts[b.status]=(counts[b.status]||0)+1;});const shelf={user:user,fetchedAt:new Date().toISOString(),total:all.length,counts:counts,books:all};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(shelf)],{type:'application/json'}));a.download='shelf.json';document.body.append(a);a.click();a.remove();alert('shelf.json を保存しました（'+shelf.books.length+'冊 / 全'+all.length+'冊）。');})()`;
 const PROMPT=`ブクログの本棚を最新にして、「図書館手帖」（ブクログの未読本が池田町・神戸町の図書館にあるか調べるサイト）に反映してください。
 
 ■ 前提
 - GitHubリポジトリ: ${REPO}（add_repo で追加してください）
 - ブクログの本棚: https://booklog.jp/users/ykdtmnhnddsbba
   GitHubのサーバーからはボット判定で読めないため、ブラウザ（built-in browser）で読みます。
-- 書き出しの形式と取得コードは、リポジトリの tools/export-shelf.js と data/shelf.json を参照してください（読み終わった(status 3)以外を、書影のimageも含めて書き出す）。
+- 書き出しの形式と取得コードは、リポジトリの tools/export-shelf.js と data/shelf.json を参照してください（読み終わったも含めて全冊を、書影のimageも含めて書き出す）。
 
 ■ やってほしいこと
 1. ブラウザでブクログの本棚を開き、tools/export-shelf.js と同じ処理で本棚を書き出す
@@ -238,10 +238,11 @@ const sysName=id=>{const s=systems.find(x=>x.id===id);return s?s.name:id};
 // ---- state ----
 const S={seg:null,lib:'all',sts:new Set(),q:'',sort:'kind'};
 const present=[...new Set(books.map(b=>b.status))];
-present.forEach(s=>S.sts.add(s));
+present.forEach(s=>{if(s!=='3')S.sts.add(s)}); // 読み終わったは、チップを押したときだけ表示
 
 function relevant(b){return S.lib==='all'?b.avail:b.avail.filter(a=>a.system===S.lib)}
 function kindOf(b){
+  if(b.checked===false)return 'skip'; // 図書館を調べない本（読み終わった等）
   if(!b.hasIsbn)return 'noisbn';
   const rel=relevant(b),libs=rel.flatMap(a=>a.libs);
   if(libs.some(l=>l.state==='貸出可'))return 'avail';
@@ -249,7 +250,7 @@ function kindOf(b){
   if(rel.some(a=>a.status!=='OK'&&a.status!=='Cache'))return 'error';
   return 'none';
 }
-const ORDER={avail:0,held:1,error:2,none:3,noisbn:4};
+const ORDER={avail:0,held:1,error:2,none:3,noisbn:4,skip:5};
 const pillCls=s=>s==='貸出可'?'ok':s==='貸出中'?'out':'info';
 
 // ---- rendering ----
@@ -492,13 +493,13 @@ function applyExtras(){
   list.forEach((e,i)=>{
     const st=e.status||'1';
     books.push({title:e.title,authors:arr(e.authors),isbn:e.isbn||'',asin:toIsbn10(e.isbn),image:e.image||'',status:st,hasIsbn:!!e.isbn,
-      avail:EXAVAIL[e.id]||[],extra:true,exId:e.id,idx:i-list.length});
+      avail:EXAVAIL[e.id]||[],checked:st==='1',extra:true,exId:e.id,idx:i-list.length});
     if(!present.includes(st)){present.push(st);S.sts.add(st)}
   });
 }
 async function checkExtras(only){
   if(!_key)return false;
-  const targets=books.filter(b=>b.extra&&b.hasIsbn&&(only?only.includes(b.isbn):!b.avail.length));
+  const targets=books.filter(b=>b.extra&&b.checked&&b.hasIsbn&&(only?only.includes(b.isbn):!b.avail.length));
   const isbns=[...new Set(targets.map(b=>b.isbn))];
   for(let i=0;i<isbns.length;i+=30){
     const chunk=isbns.slice(i,i+30);
@@ -611,7 +612,8 @@ function card(b,kind){
   if(b.extra)tags.append(el('span','tag mine','ブクログ未登録'));
   if(b.stale)tags.append(el('span','tag warn','前回の結果'));
   body.append(tags);
-  if(b.hasIsbn){
+  if(b.checked===false){/* 図書館は調べない */}
+  else if(b.hasIsbn){
     const libs=el('div','libs');
     const list=systems.length?systems.map(s=>b.avail.find(x=>x.system===s.id)||{system:s.id,status:'',libs:[]}):b.avail;
     list.forEach(x=>{
@@ -631,7 +633,8 @@ function card(b,kind){
     body.append(libs);
   }else body.append(el('div','sub','ISBNがないため自動照合できません（Kindle版のみの登録など）'));
   const acts=el('div','acts');
-  if(b.hasIsbn)acts.append(link('カーリルで見る ↗','https://calil.jp/book/'+b.isbn));
+  if(b.checked===false){/* なし */}
+  else if(b.hasIsbn)acts.append(link('カーリルで見る ↗','https://calil.jp/book/'+b.isbn));
   else acts.append(link('カーリルで書名検索 ↗','https://calil.jp/search?q='+encodeURIComponent(b.title)));
   if(b.extra){
     acts.append(link('ブクログで登録 ↗',b.asin?'https://booklog.jp/item/1/'+encodeURIComponent(b.asin):'https://booklog.jp/search?keyword='+encodeURIComponent(b.title)));
@@ -659,14 +662,14 @@ function render(){
   const lc=$('libChips');lc.innerHTML='';
   [['all','すべて'],...systems.map(s=>[s.id,s.name])].forEach(([v,t])=>lc.append(chip(t,null,S.lib===v,()=>{S.lib=v;render()})));
   const sc=$('stChips');sc.innerHTML='';
-  present.sort().forEach(s=>sc.append(chip(STATUS_LABEL[s]||s,books.filter(b=>b.status===s).length,S.sts.has(s),()=>{S.sts.has(s)?S.sts.delete(s):S.sts.add(s);render()})));
+  present.sort().forEach(s=>sc.append(chip(STATUS_LABEL[s]||s,books.filter(b=>b.status===s).length,S.sts.has(s),()=>{S.sts.has(s)?S.sts.delete(s):S.sts.add(s);if(s==='3'&&S.sts.has('3'))S.seg='all';render()})));
 
   let rows=withKind.filter(x=>S.seg==='all'||x.k===S.seg||(S.seg==='none'&&x.k==='error')||(S.seg==='owned'&&(x.k==='avail'||x.k==='held')));
   rows.sort((x,y)=>S.sort==='title'?x.b.title.localeCompare(y.b.title,'ja'):S.sort==='new'?x.b.idx-y.b.idx:(ORDER[x.k]-ORDER[y.k]||x.b.idx-y.b.idx));
   const list=$('list');list.innerHTML='';
   if(!rows.length)list.append(Object.assign(el('div','empty','該当する本はありません。'),{style:'grid-column:1/-1'}));
   rows.forEach(x=>list.append(card(x.b,x.k)));
-  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）から '+baseBooks.length+'冊を確認 ／ 貸出状況: '+fmt(DATA.generated)+' 取得 ／ 本棚: '+fmt(DATA.shelfExported)+' 書き出し'+(books.length>baseBooks.length?' ／ 手帖で追加 '+(books.length-baseBooks.length)+'冊':'');
+  $('meta').textContent='ブクログ '+DATA.user+'（全'+DATA.shelfTotal+'冊）から '+baseBooks.filter(b=>b.checked!==false).length+'冊を図書館で確認 ／ 貸出状況: '+fmt(DATA.generated)+' 取得 ／ 本棚: '+fmt(DATA.shelfExported)+' 書き出し'+(books.length>baseBooks.length?' ／ 手帖で追加 '+(books.length-baseBooks.length)+'冊':'');
 }
 $('noteExport').addEventListener('click',exportNotes);
 $('noteImport').addEventListener('change',e=>{if(e.target.files[0])importNotes(e.target.files[0]);e.target.value=''});
@@ -709,7 +712,7 @@ $('keyBtn').textContent=_key?'APIキーを保存済み（変更・削除）':'AP
 $('refreshBtn').addEventListener('click',async()=>{
   if(!_key&&!setKey())return;
   const btn=$('refreshBtn');btn.disabled=true;
-  const targets=books.filter(b=>b.hasIsbn);const isbns=[...new Set(targets.map(b=>b.isbn))];let failed=0;
+  const targets=books.filter(b=>b.hasIsbn&&b.checked!==false);const isbns=[...new Set(targets.map(b=>b.isbn))];let failed=0;
   for(let i=0;i<isbns.length;i+=30){
     const chunk=isbns.slice(i,i+30);$('status').textContent='更新中… '+Math.min(i+30,isbns.length)+' / '+isbns.length;
     try{const res=await calilCheck(chunk);targets.forEach(b=>{if(chunk.includes(b.isbn)&&res[b.isbn]){b.avail=toAvail(res[b.isbn]);delete b.stale}})}

@@ -73,7 +73,7 @@ async function loadPrev() {
     const r = await fetch(PREV_URL + (PREV_URL.includes('?') ? '&' : '?') + 't=' + Date.now());
     if (!r.ok) { console.log(`previous data: none (HTTP ${r.status})`); return map; }
     const d = await r.json();
-    for (const b of d.books || []) if (b.isbn) map.set(b.isbn, { avail: b.avail || [], checkedAt: b.checkedAt || '' });
+    for (const b of d.books || []) if (b.isbn && b.checked !== false) map.set(b.isbn, { avail: b.avail || [], checkedAt: b.checkedAt || '' });
     console.log(`previous data: ${map.size} books`);
   } catch (e) {
     console.log('previous data: unavailable (' + e.message + ')');
@@ -131,10 +131,12 @@ for (let i = 0; i < todo.length; i += CHUNK) {
 // 全件失敗なら公開データを壊さないよう異常終了
 if (todo.length && failed === todo.length) throw new Error('カーリルの照合がすべて失敗しました。');
 
-const books = targets.map((b) => {
+const books = shelf.books.map((b) => {
   const ok = hasIsbn(b);
-  const r = ok ? result.get(b.ean) : null;
+  const checked = targetSet.has(String(b.status || '0'));
+  const r = ok && checked ? result.get(b.ean) : null;
   return {
+    checked,
     title: b.title, authors: b.authors || [], isbn: ok ? b.ean : '', asin: b.asin || '', image: b.image || '', status: String(b.status || '0'), hasIsbn: ok,
     avail: r ? r.avail : [], checkedAt: r ? r.checkedAt : '', ...(r && r.stale ? { stale: true } : {}),
   };
@@ -150,5 +152,5 @@ const data = {
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'data.json'), JSON.stringify(data));
 fs.copyFileSync(path.join(root, 'web', 'index.html'), path.join(OUT, 'index.html'));
-const held = books.filter((b) => b.avail.some((a) => a.libs.length)).length;
+const held = books.filter((b) => b.checked && b.avail.some((a) => a.libs.length)).length;
 console.log(`done: ${books.length} books, held ${held}, failed ${failed} -> ${path.join(OUT, 'data.json')}`);
